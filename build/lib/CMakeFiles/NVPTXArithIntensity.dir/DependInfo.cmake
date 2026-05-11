@@ -9,10 +9,6 @@ set(CMAKE_DEPENDS_LANGUAGES
 # The set of dependency files which are needed:
 set(CMAKE_DEPENDS_DEPENDENCY_FILES
   "/home/whe302/compilers/nvptx_analyzer/lib/NVPTXArithIntensityPass.cpp" "lib/CMakeFiles/NVPTXArithIntensity.dir/NVPTXArithIntensityPass.cpp.o" "gcc" "lib/CMakeFiles/NVPTXArithIntensity.dir/NVPTXArithIntensityPass.cpp.o.d"
-  "/home/whe302/compilers/nvptx_analyzer/lib/OpClassifier.cpp" "lib/CMakeFiles/NVPTXArithIntensity.dir/OpClassifier.cpp.o" "gcc" "lib/CMakeFiles/NVPTXArithIntensity.dir/OpClassifier.cpp.o.d"
-  "/home/whe302/compilers/nvptx_analyzer/lib/PTX/Classifier.cpp" "lib/CMakeFiles/NVPTXArithIntensity.dir/PTX/Classifier.cpp.o" "gcc" "lib/CMakeFiles/NVPTXArithIntensity.dir/PTX/Classifier.cpp.o.d"
-  "/home/whe302/compilers/nvptx_analyzer/lib/PTX/Parser.cpp" "lib/CMakeFiles/NVPTXArithIntensity.dir/PTX/Parser.cpp.o" "gcc" "lib/CMakeFiles/NVPTXArithIntensity.dir/PTX/Parser.cpp.o.d"
-  "/home/whe302/compilers/nvptx_analyzer/lib/PTX/Tokenizer.cpp" "lib/CMakeFiles/NVPTXArithIntensity.dir/PTX/Tokenizer.cpp.o" "gcc" "lib/CMakeFiles/NVPTXArithIntensity.dir/PTX/Tokenizer.cpp.o.d"
   )
 
 # Targets to which this target links which contain Fortran sources.

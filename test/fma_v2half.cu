@@ -14,13 +14,12 @@
 // FMA. This bypasses the cuda_fp16.h __hfma2 intrinsic which lowers to
 // inline asm — which our static analyzer cannot see inside.
 //
-// We deliberately DO NOT use __restrict__ on the loads. With __restrict__,
-// clang emits the LDG (read-only / non-coherent) form, which lowers to
-// LD_GLOBAL_NC_i32 in MIR. That opcode family carries no MachineMemOperand
-// in the NVPTX backend, so our MMO-based byte accounting misses it. The
-// non-restrict form lowers to plain LD_GLOBAL_i32 with a proper MMO and
-// gets bucketed correctly. Filed: LDG byte accounting needs an
-// opcode-driven fallback when MMOs are absent.
+// __restrict__ on the inputs triggers the LDG (read-only / non-coherent)
+// path in NVPTX. Those opcodes (LD_GLOBAL_NC_*) carry no MachineMemOperand,
+// so the MMO-walking path drops their bytes — we now recover them via the
+// opcode-name fallback in OpClassifier::parseMemoryOpcodeName. Re-adding
+// __restrict__ here is the regression check: byte counts must match the
+// non-__restrict__ version.
 //
 // Per thread: one FMA_F16x2rrr (4 FLOPs in f16) and 4 global accesses of
 // 4 bytes each (3 loads + 1 store of v2half = i32 width).
@@ -29,10 +28,10 @@
 typedef _Float16 v2half __attribute__((ext_vector_type(2)));
 
 extern "C" __global__ void fma_v2half_kernel(
-        const v2half* a,
-        const v2half* b,
-        const v2half* c,
-        v2half* d) {
+        const v2half* __restrict__ a,
+        const v2half* __restrict__ b,
+        const v2half* __restrict__ c,
+        v2half* __restrict__ d) {
     int idx = threadIdx.x + blockIdx.x * blockDim.x;
     d[idx] = a[idx] * b[idx] + c[idx];
 }

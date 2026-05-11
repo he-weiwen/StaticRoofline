@@ -1,5 +1,5 @@
-lib/CMakeFiles/NVPTXArithIntensity.dir/PTX/Classifier.cpp.o: \
- /home/whe302/compilers/nvptx_analyzer/lib/PTX/Classifier.cpp \
+test/CMakeFiles/ptx_unit_tests.dir/ptx_unit_tests.cpp.o: \
+ /home/whe302/compilers/nvptx_analyzer/test/ptx_unit_tests.cpp \
  /usr/include/stdc-predef.h \
  /home/whe302/compilers/nvptx_analyzer/lib/PTX/Classifier.h \
  /home/whe302/compilers/nvptx_analyzer/lib/OpClassifier.h \
@@ -195,4 +195,5 @@ lib/CMakeFiles/NVPTXArithIntensity.dir/PTX/Classifier.cpp.o: \
  /usr/include/c++/13/bits/atomic_lockfree_defines.h \
  /usr/include/c++/13/backward/auto_ptr.h \
  /usr/include/c++/13/pstl/glue_memory_defs.h /usr/include/c++/13/variant \
- /usr/include/c++/13/bits/parse_numbers.h
+ /usr/include/c++/13/bits/parse_numbers.h \
+ /home/whe302/compilers/nvptx_analyzer/lib/PTX/Tokenizer.h

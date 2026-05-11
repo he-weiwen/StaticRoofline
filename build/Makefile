@@ -227,6 +227,19 @@ target_parser_gen/fast:
 .PHONY : target_parser_gen/fast
 
 #=============================================================================
+# Target rules for targets named ptxai_ptx
+
+# Build rule for target.
+ptxai_ptx: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 ptxai_ptx
+.PHONY : ptxai_ptx
+
+# fast build rule for target.
+ptxai_ptx/fast:
+	$(MAKE) $(MAKESILENT) -f lib/CMakeFiles/ptxai_ptx.dir/build.make lib/CMakeFiles/ptxai_ptx.dir/build
+.PHONY : ptxai_ptx/fast
+
+#=============================================================================
 # Target rules for targets named NVPTXArithIntensity
 
 # Build rule for target.
@@ -344,6 +357,84 @@ test-fma_v2half/fast:
 .PHONY : test-fma_v2half/fast
 
 #=============================================================================
+# Target rules for targets named test-matmul_loops
+
+# Build rule for target.
+test-matmul_loops: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test-matmul_loops
+.PHONY : test-matmul_loops
+
+# fast build rule for target.
+test-matmul_loops/fast:
+	$(MAKE) $(MAKESILENT) -f test/CMakeFiles/test-matmul_loops.dir/build.make test/CMakeFiles/test-matmul_loops.dir/build
+.PHONY : test-matmul_loops/fast
+
+#=============================================================================
+# Target rules for targets named test-matmul_tiled_loops
+
+# Build rule for target.
+test-matmul_tiled_loops: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test-matmul_tiled_loops
+.PHONY : test-matmul_tiled_loops
+
+# fast build rule for target.
+test-matmul_tiled_loops/fast:
+	$(MAKE) $(MAKESILENT) -f test/CMakeFiles/test-matmul_tiled_loops.dir/build.make test/CMakeFiles/test-matmul_tiled_loops.dir/build
+.PHONY : test-matmul_tiled_loops/fast
+
+#=============================================================================
+# Target rules for targets named test-inline_asm_hfma2
+
+# Build rule for target.
+test-inline_asm_hfma2: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test-inline_asm_hfma2
+.PHONY : test-inline_asm_hfma2
+
+# fast build rule for target.
+test-inline_asm_hfma2/fast:
+	$(MAKE) $(MAKESILENT) -f test/CMakeFiles/test-inline_asm_hfma2.dir/build.make test/CMakeFiles/test-inline_asm_hfma2.dir/build
+.PHONY : test-inline_asm_hfma2/fast
+
+#=============================================================================
+# Target rules for targets named test-ldg_restrict
+
+# Build rule for target.
+test-ldg_restrict: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test-ldg_restrict
+.PHONY : test-ldg_restrict
+
+# fast build rule for target.
+test-ldg_restrict/fast:
+	$(MAKE) $(MAKESILENT) -f test/CMakeFiles/test-ldg_restrict.dir/build.make test/CMakeFiles/test-ldg_restrict.dir/build
+.PHONY : test-ldg_restrict/fast
+
+#=============================================================================
+# Target rules for targets named ptx_unit_tests
+
+# Build rule for target.
+ptx_unit_tests: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 ptx_unit_tests
+.PHONY : ptx_unit_tests
+
+# fast build rule for target.
+ptx_unit_tests/fast:
+	$(MAKE) $(MAKESILENT) -f test/CMakeFiles/ptx_unit_tests.dir/build.make test/CMakeFiles/ptx_unit_tests.dir/build
+.PHONY : ptx_unit_tests/fast
+
+#=============================================================================
+# Target rules for targets named test-ptx-unit
+
+# Build rule for target.
+test-ptx-unit: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test-ptx-unit
+.PHONY : test-ptx-unit
+
+# fast build rule for target.
+test-ptx-unit/fast:
+	$(MAKE) $(MAKESILENT) -f test/CMakeFiles/test-ptx-unit.dir/build.make test/CMakeFiles/test-ptx-unit.dir/build
+.PHONY : test-ptx-unit/fast
+
+#=============================================================================
 # Target rules for targets named check
 
 # Build rule for target.
@@ -393,10 +484,17 @@ help:
 	@echo "... test-fma"
 	@echo "... test-fma_v2half"
 	@echo "... test-fsub"
+	@echo "... test-inline_asm_hfma2"
+	@echo "... test-ldg_restrict"
 	@echo "... test-local"
+	@echo "... test-matmul_loops"
+	@echo "... test-matmul_tiled_loops"
+	@echo "... test-ptx-unit"
 	@echo "... test-smoke"
 	@echo "... vt_gen"
 	@echo "... NVPTXArithIntensity"
+	@echo "... ptx_unit_tests"
+	@echo "... ptxai_ptx"
 .PHONY : help
 
 

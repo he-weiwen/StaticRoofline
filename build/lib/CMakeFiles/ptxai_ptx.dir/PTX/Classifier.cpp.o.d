@@ -1,6 +1,7 @@
-lib/CMakeFiles/NVPTXArithIntensity.dir/OpClassifier.cpp.o: \
- /home/whe302/compilers/nvptx_analyzer/lib/OpClassifier.cpp \
+lib/CMakeFiles/ptxai_ptx.dir/PTX/Classifier.cpp.o: \
+ /home/whe302/compilers/nvptx_analyzer/lib/PTX/Classifier.cpp \
  /usr/include/stdc-predef.h \
+ /home/whe302/compilers/nvptx_analyzer/lib/PTX/Classifier.h \
  /home/whe302/compilers/nvptx_analyzer/lib/OpClassifier.h \
  /home/whe302/compilers/llvm-project/llvm/include/llvm/ADT/StringRef.h \
  /home/whe302/compilers/llvm-project/llvm/include/llvm/ADT/DenseMapInfo.h \
@@ -179,4 +180,33 @@ lib/CMakeFiles/NVPTXArithIntensity.dir/OpClassifier.cpp.o: \
  /usr/include/c++/13/algorithm \
  /usr/include/c++/13/pstl/glue_algorithm_defs.h \
  /usr/include/c++/13/pstl/execution_defs.h /usr/include/c++/13/cstring \
- /usr/include/string.h /usr/include/strings.h
+ /usr/include/string.h /usr/include/strings.h \
+ /home/whe302/compilers/nvptx_analyzer/lib/PTX/Parser.h \
+ /home/whe302/compilers/llvm-project/llvm/include/llvm/ADT/SmallVector.h \
+ /usr/include/c++/13/memory \
+ /usr/include/c++/13/bits/stl_raw_storage_iter.h \
+ /usr/include/c++/13/bits/align.h /usr/include/c++/13/bits/unique_ptr.h \
+ /usr/include/c++/13/bits/shared_ptr.h \
+ /usr/include/c++/13/bits/shared_ptr_base.h \
+ /usr/include/c++/13/bits/allocated_ptr.h \
+ /usr/include/c++/13/ext/concurrence.h \
+ /usr/include/c++/13/bits/shared_ptr_atomic.h \
+ /usr/include/c++/13/bits/atomic_base.h \
+ /usr/include/c++/13/bits/atomic_lockfree_defines.h \
+ /usr/include/c++/13/backward/auto_ptr.h \
+ /usr/include/c++/13/pstl/glue_memory_defs.h /usr/include/c++/13/variant \
+ /usr/include/c++/13/bits/parse_numbers.h \
+ /home/whe302/compilers/llvm-project/llvm/include/llvm/ADT/ArrayRef.h \
+ /home/whe302/compilers/llvm-project/llvm/include/llvm/ADT/Hashing.h \
+ /home/whe302/compilers/llvm-project/build/include/llvm/Config/abi-breaking.h \
+ /home/whe302/compilers/llvm-project/llvm/include/llvm/Support/DataTypes.h \
+ /home/whe302/compilers/llvm-project/llvm/include/llvm-c/DataTypes.h \
+ /usr/include/inttypes.h \
+ /home/whe302/compilers/llvm-project/llvm/include/llvm/Support/ErrorHandling.h \
+ /home/whe302/compilers/llvm-project/llvm/include/llvm/Support/SwapByteOrder.h \
+ /home/whe302/compilers/llvm-project/llvm/include/llvm/ADT/bit.h \
+ /home/whe302/compilers/llvm-project/llvm/include/llvm/Support/type_traits.h \
+ /home/whe302/compilers/llvm-project/llvm/include/llvm/ADT/STLExtras.h \
+ /home/whe302/compilers/llvm-project/llvm/include/llvm/ADT/iterator.h \
+ /usr/include/c++/13/numeric /usr/include/c++/13/bits/stl_numeric.h \
+ /usr/include/c++/13/pstl/glue_numeric_defs.h

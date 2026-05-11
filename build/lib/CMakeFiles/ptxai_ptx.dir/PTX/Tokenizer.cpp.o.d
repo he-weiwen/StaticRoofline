@@ -1,4 +1,4 @@
-lib/CMakeFiles/NVPTXArithIntensity.dir/PTX/Tokenizer.cpp.o: \
+lib/CMakeFiles/ptxai_ptx.dir/PTX/Tokenizer.cpp.o: \
  /home/whe302/compilers/nvptx_analyzer/lib/PTX/Tokenizer.cpp \
  /usr/include/stdc-predef.h \
  /home/whe302/compilers/nvptx_analyzer/lib/PTX/Tokenizer.h \

@@ -1,4 +1,4 @@
-lib/CMakeFiles/NVPTXArithIntensity.dir/PTX/Parser.cpp.o: \
+lib/CMakeFiles/ptxai_ptx.dir/PTX/Parser.cpp.o: \
  /home/whe302/compilers/nvptx_analyzer/lib/PTX/Parser.cpp \
  /usr/include/stdc-predef.h \
  /home/whe302/compilers/nvptx_analyzer/lib/PTX/Parser.h \
@@ -191,4 +191,18 @@ lib/CMakeFiles/NVPTXArithIntensity.dir/PTX/Parser.cpp.o: \
  /home/whe302/compilers/llvm-project/llvm/include/llvm/ADT/STLForwardCompat.h \
  /home/whe302/compilers/llvm-project/llvm/include/llvm/ADT/iterator_range.h \
  /usr/include/c++/13/variant /usr/include/c++/13/bits/parse_numbers.h \
- /home/whe302/compilers/nvptx_analyzer/lib/PTX/Tokenizer.h
+ /home/whe302/compilers/nvptx_analyzer/lib/PTX/Tokenizer.h \
+ /home/whe302/compilers/llvm-project/llvm/include/llvm/ADT/ArrayRef.h \
+ /home/whe302/compilers/llvm-project/llvm/include/llvm/ADT/Hashing.h \
+ /home/whe302/compilers/llvm-project/build/include/llvm/Config/abi-breaking.h \
+ /home/whe302/compilers/llvm-project/llvm/include/llvm/Support/DataTypes.h \
+ /home/whe302/compilers/llvm-project/llvm/include/llvm-c/DataTypes.h \
+ /usr/include/inttypes.h \
+ /home/whe302/compilers/llvm-project/llvm/include/llvm/Support/ErrorHandling.h \
+ /home/whe302/compilers/llvm-project/llvm/include/llvm/Support/SwapByteOrder.h \
+ /home/whe302/compilers/llvm-project/llvm/include/llvm/ADT/bit.h \
+ /home/whe302/compilers/llvm-project/llvm/include/llvm/Support/type_traits.h \
+ /home/whe302/compilers/llvm-project/llvm/include/llvm/ADT/STLExtras.h \
+ /home/whe302/compilers/llvm-project/llvm/include/llvm/ADT/iterator.h \
+ /usr/include/c++/13/numeric /usr/include/c++/13/bits/stl_numeric.h \
+ /usr/include/c++/13/pstl/glue_numeric_defs.h

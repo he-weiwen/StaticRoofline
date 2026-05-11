@@ -80,9 +80,35 @@ add_ptxai_test(add_f64)
 add_ptxai_test(local)
 add_ptxai_test(fma)
 add_ptxai_cuda_test(fma_v2half)
+add_ptxai_cuda_test(matmul_loops)
+add_ptxai_cuda_test(matmul_tiled_loops)
+add_ptxai_cuda_test(inline_asm_hfma2)
+add_ptxai_cuda_test(ldg_restrict)
+
+# Standalone unit-test binary for the lib/PTX/ tokenizer/parser/classifier
+# pipeline. Linked against the same object files as the plugin via
+# $<TARGET_OBJECTS:ptxai_ptx>, so it tests exactly what runs in production.
+add_executable(ptx_unit_tests
+  ptx_unit_tests.cpp
+  $<TARGET_OBJECTS:ptxai_ptx>)
+target_include_directories(ptx_unit_tests PRIVATE
+  ${CMAKE_SOURCE_DIR}/lib
+  ${LLVM_INCLUDE_DIRS})
+# Link against LLVM Support for StringRef / SmallVector machinery.
+llvm_map_components_to_libnames(_unit_test_libs Support)
+target_link_libraries(ptx_unit_tests PRIVATE ${_unit_test_libs})
+
+add_custom_target(test-ptx-unit
+  COMMAND $<TARGET_FILE:ptx_unit_tests>
+  DEPENDS ptx_unit_tests
+  COMMENT "Running PTX tokenizer/parser/classifier unit tests"
+  USES_TERMINAL)
 
 add_custom_target(check
-  DEPENDS test-smoke test-fsub test-add_f64 test-local test-fma test-fma_v2half
+  DEPENDS test-smoke test-fsub test-add_f64 test-local test-fma
+          test-fma_v2half test-matmul_loops test-matmul_tiled_loops
+          test-inline_asm_hfma2 test-ldg_restrict
+          test-ptx-unit
   COMMENT "Running all ptx-ai tests")
 
 # Backward-compat alias for the previous target name.

@@ -9,6 +9,7 @@
 /home/whe302/compilers/nvptx_analyzer/build/CMakeFiles/install.dir
 /home/whe302/compilers/nvptx_analyzer/build/CMakeFiles/install/local.dir
 /home/whe302/compilers/nvptx_analyzer/build/CMakeFiles/install/strip.dir
+/home/whe302/compilers/nvptx_analyzer/build/lib/CMakeFiles/ptxai_ptx.dir
 /home/whe302/compilers/nvptx_analyzer/build/lib/CMakeFiles/NVPTXArithIntensity.dir
 /home/whe302/compilers/nvptx_analyzer/build/lib/CMakeFiles/install-NVPTXArithIntensity.dir
 /home/whe302/compilers/nvptx_analyzer/build/lib/CMakeFiles/install-NVPTXArithIntensity-stripped.dir
@@ -24,6 +25,12 @@
 /home/whe302/compilers/nvptx_analyzer/build/test/CMakeFiles/test-local.dir
 /home/whe302/compilers/nvptx_analyzer/build/test/CMakeFiles/test-fma.dir
 /home/whe302/compilers/nvptx_analyzer/build/test/CMakeFiles/test-fma_v2half.dir
+/home/whe302/compilers/nvptx_analyzer/build/test/CMakeFiles/test-matmul_loops.dir
+/home/whe302/compilers/nvptx_analyzer/build/test/CMakeFiles/test-matmul_tiled_loops.dir
+/home/whe302/compilers/nvptx_analyzer/build/test/CMakeFiles/test-inline_asm_hfma2.dir
+/home/whe302/compilers/nvptx_analyzer/build/test/CMakeFiles/test-ldg_restrict.dir
+/home/whe302/compilers/nvptx_analyzer/build/test/CMakeFiles/ptx_unit_tests.dir
+/home/whe302/compilers/nvptx_analyzer/build/test/CMakeFiles/test-ptx-unit.dir
 /home/whe302/compilers/nvptx_analyzer/build/test/CMakeFiles/check.dir
 /home/whe302/compilers/nvptx_analyzer/build/test/CMakeFiles/smoke-test.dir
 /home/whe302/compilers/nvptx_analyzer/build/test/CMakeFiles/edit_cache.dir

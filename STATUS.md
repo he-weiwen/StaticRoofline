@@ -31,6 +31,16 @@ runs against MIR dumped with `-stop-before=nvptx-asm-printer`.
 - Memory accounting via `MachineMemOperand` size + addrspace, bucketed
   into global / shared / local / const / param / unknown, split by
   load vs store. Atomics counted as both.
+- **Opcode-name fallback** (`parseMemoryOpcodeName` in `OpClassifier`)
+  for NVPTX opcode families that deliberately ship without
+  `MachineMemOperand`s — the `LD_GLOBAL_NC_*` (LDG) and `LDU_GLOBAL_*`
+  read-only-cache families. Recognizes the full prefix taxonomy
+  (LD/ST × GLOBAL/SHARED/LOCAL/CONST/PARAM × scalar/v2/v4/v8 × every
+  width). This is **not a workaround for an upstream bug**: the LDG
+  family's lack of `mayLoad` / MMOs is intentional NVPTX design
+  (D17471, D112466) — they're modeled as constant-materialization
+  for optimization purposes. Our analyzer needs to know they move
+  bytes, so we recover that target-side.
 - AI denominator is `global_bytes` only. `local_bytes` reported as a
   separate diagnostic field (visible if non-zero, not folded into AI).
 - `InvocationScope` (`PerThread` / `PerWarp` / `PerCTA`) baked into
@@ -73,9 +83,17 @@ runs against MIR dumped with `-stop-before=nvptx-asm-printer`.
   Bounded, predictable, scrapeable.
 - `__hfma2` (and similar `cuda_fp16.h` operators) lower to inline asm
   ⇒ invisible to MIR classifier ⇒ requires the PTX parser.
-- `__restrict__` triggers the LDG path; `LD_GLOBAL_NC_*` opcodes
-  carry no MMO and are silently dropped by the current MMO-driven
-  byte accounting.
+- `__restrict__` triggers the LDG path. `LD_GLOBAL_NC_*` opcodes
+  **deliberately** lack `MachineMemOperand`s and have `mayLoad = 0`
+  in their MCInstrDesc — this is intentional upstream design (D17471
+  in 2016 and D112466 in 2023), documented at
+  `llvm/lib/Target/NVPTX/NVPTXIntrinsics.td:2786-2788`. NVPTX models
+  these as constant-materialization rather than loads because the
+  hardware texture-cache path guarantees the data is read-only for
+  the kernel lifetime, which lets MachineLICM/Sink/Scheduler reorder
+  them freely. Our analyzer correctly recovers byte traffic via an
+  opcode-name fallback (`parseMemoryOpcodeName`) — not by fighting
+  the upstream design.
 - PTX modifiers use both `.` and `::` separators
   (e.g. `cp.async.bulk.shared::cluster.global.mbarrier::complete_tx::bytes`).
   Tokenizer must allow `::` inside identifiers.
@@ -107,10 +125,14 @@ runs against MIR dumped with `-stop-before=nvptx-asm-printer`.
    the existing `BlockStats` counters.
 
 ### Phase 2 — memory accounting gaps
-- **LDG bug**: `LD_GLOBAL_NC_*` carries no `MachineMemOperand`. Add
-  opcode-driven byte fallback when `MI.mayLoad() && memoperands().empty()`
-  and the opcode name matches `LD_GLOBAL*`. Type-suffix (`_i32`/`_i64`/
-  `_f32`/`_f64`) gives byte width.
+- ~~**LDG opcode-name fallback**~~: **DONE.** `LD_GLOBAL_NC_*` /
+  `LDU_GLOBAL_*` etc. deliberately lack MMOs (see Verified findings
+  above for the rationale and upstream citations). Recovered via
+  `parseMemoryOpcodeName` in `OpClassifier.{h,cpp}` covering all
+  documented LD/ST opcode families. Empirically validated against
+  the CUTLASS corpus: aggregate `global_bytes` increased by exactly
+  1200 × 4 = 4800 bytes, matching the histogram count of
+  `LD_GLOBAL_NC_i32` instances.
 - Atomic byte accounting refinement (RMW semantics — currently OK as
   load+store, worth a comment).
 
@@ -151,9 +173,10 @@ runs against MIR dumped with `-stop-before=nvptx-asm-printer`.
   regenerate at build time. Leaning toward commit-and-regenerate-on-
   toolkit-upgrade for reproducibility (avoids runtime Python
   dependency).
-- **`fma_v2half.cu` test**: built without `__restrict__` to sidestep
-  the LDG bug. Re-add `__restrict__` once Phase 2 lands as a
-  regression check.
+- ~~**`fma_v2half.cu` test**~~: now uses `__restrict__` again (since
+  the LDG opcode-name fallback landed). Same `flops=4 global_bytes=16
+  ai=0.25` as the non-`__restrict__` version. Plus a dedicated
+  `ldg_restrict.cu` integration test exercising the LDG path.
 - **FA4-paper-level roofline**: explicitly distinguishes static-
   requested vs measured-transferred vs achieved. This tool produces
   the first; pair with NCU for the others. Naming convention in

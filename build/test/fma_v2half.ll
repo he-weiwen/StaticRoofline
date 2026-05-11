@@ -4,7 +4,7 @@ target datalayout = "e-p6:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64
 target triple = "nvptx64-nvidia-cuda"
 
 ; Function Attrs: mustprogress nofree noinline norecurse nosync nounwind willreturn memory(argmem: readwrite)
-define dso_local ptx_kernel void @fma_v2half_kernel(ptr noundef readonly captures(none) %a, ptr noundef readonly captures(none) %b, ptr noundef readonly captures(none) %c, ptr noundef writeonly captures(none) %d) local_unnamed_addr #0 {
+define dso_local ptx_kernel void @fma_v2half_kernel(ptr noalias noundef readonly captures(none) %a, ptr noalias noundef readonly captures(none) %b, ptr noalias noundef readonly captures(none) %c, ptr noalias noundef writeonly captures(none) %d) local_unnamed_addr #0 {
 entry:
   %0 = tail call noundef i32 @llvm.nvvm.read.ptx.sreg.tid.x()
   %1 = tail call noundef i32 @llvm.nvvm.read.ptx.sreg.ctaid.x()

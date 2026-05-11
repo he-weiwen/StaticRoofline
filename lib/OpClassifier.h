@@ -11,6 +11,7 @@
 
 #include "llvm/ADT/StringRef.h"
 #include <cstdint>
+#include <optional>
 
 namespace ptxai {
 
@@ -75,6 +76,44 @@ OpClass classify(llvm::StringRef Name);
 // the caller can re-derive precision in cases where it doesn't go through
 // classify() — though normal usage is to read OpClass::precision.
 FpPrecision detectPrecision(llvm::StringRef Name);
+
+// ===========================================================================
+// Memory-opcode-name parsing (for opcodes that lack MachineMemOperands)
+// ===========================================================================
+//
+// Some NVPTX backend opcodes are loads or stores but emit without a
+// MachineMemOperand attached, so the analyzer's MMO-walking path silently
+// misses their byte traffic. The most consequential family is the LDG
+// path (read-only / non-coherent global loads), triggered when CUDA code
+// uses `__restrict__` on input pointers. Empirically this opcode shows up
+// as the 9th-most-common opcode in our CUTLASS corpus.
+//
+// parseMemoryOpcodeName recovers the implicit address space and byte width
+// from the opcode name itself, so the analyzer can fall back when the MMO
+// is absent. The function is pure — it takes no MIR context — and is fully
+// unit-testable.
+//
+// Coverage (matches NVPTX LLVM 23 TableGen):
+//   LD_GLOBAL_NC_*, LDU_GLOBAL_*           — global, load
+//   LD_GLOBAL_*, LDG_*                     — global, load (defensive)
+//   LD_SHARED_*, LDS_*                     — shared, load (defensive)
+//   LD_LOCAL_*                             — local, load
+//   LD_CONST_*, LDC_*                      — const, load
+//   LD_PARAM_*                             — param, load
+//   ST_GLOBAL_*, ST_SHARED_*, ST_LOCAL_*   — store-side mirrors
+//   Vector forms: ".._v2.." / ".._v4.." / ".._v8.." (LDV-style)
+//                 ".._v2i32" / ".._v4i64" (LD_GLOBAL_NC-style, no separator)
+struct OpcodeNameMemInfo {
+    unsigned addrSpace = 0;     // matches NVPTXAS values
+    uint64_t bytes = 0;
+    bool isLoad = false;
+    bool isStore = false;
+};
+
+// Returns parsed memory-op info if the opcode name matches a known NVPTX
+// load/store family, otherwise std::nullopt. Pure function on the name.
+std::optional<OpcodeNameMemInfo>
+parseMemoryOpcodeName(llvm::StringRef Name);
 
 } // namespace ptxai
 

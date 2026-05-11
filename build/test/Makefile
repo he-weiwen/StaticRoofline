@@ -246,6 +246,90 @@ test-fma_v2half/fast:
 .PHONY : test-fma_v2half/fast
 
 # Convenience name for target.
+test/CMakeFiles/test-matmul_loops.dir/rule:
+	cd /home/whe302/compilers/nvptx_analyzer/build && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test/CMakeFiles/test-matmul_loops.dir/rule
+.PHONY : test/CMakeFiles/test-matmul_loops.dir/rule
+
+# Convenience name for target.
+test-matmul_loops: test/CMakeFiles/test-matmul_loops.dir/rule
+.PHONY : test-matmul_loops
+
+# fast build rule for target.
+test-matmul_loops/fast:
+	cd /home/whe302/compilers/nvptx_analyzer/build && $(MAKE) $(MAKESILENT) -f test/CMakeFiles/test-matmul_loops.dir/build.make test/CMakeFiles/test-matmul_loops.dir/build
+.PHONY : test-matmul_loops/fast
+
+# Convenience name for target.
+test/CMakeFiles/test-matmul_tiled_loops.dir/rule:
+	cd /home/whe302/compilers/nvptx_analyzer/build && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test/CMakeFiles/test-matmul_tiled_loops.dir/rule
+.PHONY : test/CMakeFiles/test-matmul_tiled_loops.dir/rule
+
+# Convenience name for target.
+test-matmul_tiled_loops: test/CMakeFiles/test-matmul_tiled_loops.dir/rule
+.PHONY : test-matmul_tiled_loops
+
+# fast build rule for target.
+test-matmul_tiled_loops/fast:
+	cd /home/whe302/compilers/nvptx_analyzer/build && $(MAKE) $(MAKESILENT) -f test/CMakeFiles/test-matmul_tiled_loops.dir/build.make test/CMakeFiles/test-matmul_tiled_loops.dir/build
+.PHONY : test-matmul_tiled_loops/fast
+
+# Convenience name for target.
+test/CMakeFiles/test-inline_asm_hfma2.dir/rule:
+	cd /home/whe302/compilers/nvptx_analyzer/build && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test/CMakeFiles/test-inline_asm_hfma2.dir/rule
+.PHONY : test/CMakeFiles/test-inline_asm_hfma2.dir/rule
+
+# Convenience name for target.
+test-inline_asm_hfma2: test/CMakeFiles/test-inline_asm_hfma2.dir/rule
+.PHONY : test-inline_asm_hfma2
+
+# fast build rule for target.
+test-inline_asm_hfma2/fast:
+	cd /home/whe302/compilers/nvptx_analyzer/build && $(MAKE) $(MAKESILENT) -f test/CMakeFiles/test-inline_asm_hfma2.dir/build.make test/CMakeFiles/test-inline_asm_hfma2.dir/build
+.PHONY : test-inline_asm_hfma2/fast
+
+# Convenience name for target.
+test/CMakeFiles/test-ldg_restrict.dir/rule:
+	cd /home/whe302/compilers/nvptx_analyzer/build && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test/CMakeFiles/test-ldg_restrict.dir/rule
+.PHONY : test/CMakeFiles/test-ldg_restrict.dir/rule
+
+# Convenience name for target.
+test-ldg_restrict: test/CMakeFiles/test-ldg_restrict.dir/rule
+.PHONY : test-ldg_restrict
+
+# fast build rule for target.
+test-ldg_restrict/fast:
+	cd /home/whe302/compilers/nvptx_analyzer/build && $(MAKE) $(MAKESILENT) -f test/CMakeFiles/test-ldg_restrict.dir/build.make test/CMakeFiles/test-ldg_restrict.dir/build
+.PHONY : test-ldg_restrict/fast
+
+# Convenience name for target.
+test/CMakeFiles/ptx_unit_tests.dir/rule:
+	cd /home/whe302/compilers/nvptx_analyzer/build && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test/CMakeFiles/ptx_unit_tests.dir/rule
+.PHONY : test/CMakeFiles/ptx_unit_tests.dir/rule
+
+# Convenience name for target.
+ptx_unit_tests: test/CMakeFiles/ptx_unit_tests.dir/rule
+.PHONY : ptx_unit_tests
+
+# fast build rule for target.
+ptx_unit_tests/fast:
+	cd /home/whe302/compilers/nvptx_analyzer/build && $(MAKE) $(MAKESILENT) -f test/CMakeFiles/ptx_unit_tests.dir/build.make test/CMakeFiles/ptx_unit_tests.dir/build
+.PHONY : ptx_unit_tests/fast
+
+# Convenience name for target.
+test/CMakeFiles/test-ptx-unit.dir/rule:
+	cd /home/whe302/compilers/nvptx_analyzer/build && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test/CMakeFiles/test-ptx-unit.dir/rule
+.PHONY : test/CMakeFiles/test-ptx-unit.dir/rule
+
+# Convenience name for target.
+test-ptx-unit: test/CMakeFiles/test-ptx-unit.dir/rule
+.PHONY : test-ptx-unit
+
+# fast build rule for target.
+test-ptx-unit/fast:
+	cd /home/whe302/compilers/nvptx_analyzer/build && $(MAKE) $(MAKESILENT) -f test/CMakeFiles/test-ptx-unit.dir/build.make test/CMakeFiles/test-ptx-unit.dir/build
+.PHONY : test-ptx-unit/fast
+
+# Convenience name for target.
 test/CMakeFiles/check.dir/rule:
 	cd /home/whe302/compilers/nvptx_analyzer/build && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test/CMakeFiles/check.dir/rule
 .PHONY : test/CMakeFiles/check.dir/rule
@@ -273,6 +357,30 @@ smoke-test/fast:
 	cd /home/whe302/compilers/nvptx_analyzer/build && $(MAKE) $(MAKESILENT) -f test/CMakeFiles/smoke-test.dir/build.make test/CMakeFiles/smoke-test.dir/build
 .PHONY : smoke-test/fast
 
+ptx_unit_tests.o: ptx_unit_tests.cpp.o
+.PHONY : ptx_unit_tests.o
+
+# target to build an object file
+ptx_unit_tests.cpp.o:
+	cd /home/whe302/compilers/nvptx_analyzer/build && $(MAKE) $(MAKESILENT) -f test/CMakeFiles/ptx_unit_tests.dir/build.make test/CMakeFiles/ptx_unit_tests.dir/ptx_unit_tests.cpp.o
+.PHONY : ptx_unit_tests.cpp.o
+
+ptx_unit_tests.i: ptx_unit_tests.cpp.i
+.PHONY : ptx_unit_tests.i
+
+# target to preprocess a source file
+ptx_unit_tests.cpp.i:
+	cd /home/whe302/compilers/nvptx_analyzer/build && $(MAKE) $(MAKESILENT) -f test/CMakeFiles/ptx_unit_tests.dir/build.make test/CMakeFiles/ptx_unit_tests.dir/ptx_unit_tests.cpp.i
+.PHONY : ptx_unit_tests.cpp.i
+
+ptx_unit_tests.s: ptx_unit_tests.cpp.s
+.PHONY : ptx_unit_tests.s
+
+# target to generate assembly for a file
+ptx_unit_tests.cpp.s:
+	cd /home/whe302/compilers/nvptx_analyzer/build && $(MAKE) $(MAKESILENT) -f test/CMakeFiles/ptx_unit_tests.dir/build.make test/CMakeFiles/ptx_unit_tests.dir/ptx_unit_tests.cpp.s
+.PHONY : ptx_unit_tests.cpp.s
+
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -291,8 +399,17 @@ help:
 	@echo "... test-fma"
 	@echo "... test-fma_v2half"
 	@echo "... test-fsub"
+	@echo "... test-inline_asm_hfma2"
+	@echo "... test-ldg_restrict"
 	@echo "... test-local"
+	@echo "... test-matmul_loops"
+	@echo "... test-matmul_tiled_loops"
+	@echo "... test-ptx-unit"
 	@echo "... test-smoke"
+	@echo "... ptx_unit_tests"
+	@echo "... ptx_unit_tests.o"
+	@echo "... ptx_unit_tests.i"
+	@echo "... ptx_unit_tests.s"
 .PHONY : help
 
 

@@ -347,6 +347,32 @@ lib/CMakeFiles/NVPTXArithIntensity.dir/NVPTXArithIntensityPass.cpp.o: \
  /home/whe302/compilers/llvm-project/llvm/include/llvm-c/Error.h \
  /home/whe302/compilers/llvm-project/llvm/include/llvm-c/Visibility.h \
  /home/whe302/compilers/llvm-project/llvm/include/llvm/Support/ErrorOr.h \
+ /home/whe302/compilers/llvm-project/llvm/include/llvm/CodeGen/MachineLoopInfo.h \
+ /home/whe302/compilers/llvm-project/llvm/include/llvm/CodeGen/MachinePassManager.h \
+ /home/whe302/compilers/llvm-project/llvm/include/llvm/ADT/FunctionExtras.h \
+ /home/whe302/compilers/llvm-project/llvm/include/llvm/IR/CFG.h \
+ /home/whe302/compilers/llvm-project/llvm/include/llvm/IR/BasicBlock.h \
+ /home/whe302/compilers/llvm-project/llvm/include/llvm/IR/DebugProgramInstruction.h \
+ /home/whe302/compilers/llvm-project/llvm/include/llvm/IR/DbgVariableFragmentInfo.h \
+ /home/whe302/compilers/llvm-project/llvm/include/llvm/IR/Instruction.h \
+ /home/whe302/compilers/llvm-project/llvm/include/llvm/IR/SymbolTableListTraits.h \
+ /home/whe302/compilers/llvm-project/llvm/include/llvm/IR/Instruction.def \
+ /home/whe302/compilers/llvm-project/llvm/include/llvm/IR/Function.h \
+ /home/whe302/compilers/llvm-project/llvm/include/llvm/ADT/DenseSet.h \
+ /home/whe302/compilers/llvm-project/llvm/include/llvm/IR/Argument.h \
+ /home/whe302/compilers/llvm-project/llvm/include/llvm/IR/Attributes.h \
+ /home/whe302/compilers/llvm-project/llvm/include/llvm/Support/ModRef.h \
+ /home/whe302/compilers/llvm-project/build/include/llvm/IR/Attributes.inc \
+ /home/whe302/compilers/llvm-project/llvm/include/llvm/IR/CallingConv.h \
+ /home/whe302/compilers/llvm-project/llvm/include/llvm/IR/GlobalObject.h \
+ /home/whe302/compilers/llvm-project/llvm/include/llvm/IR/GlobalValue.h \
+ /home/whe302/compilers/llvm-project/llvm/include/llvm/IR/OperandTraits.h \
+ /home/whe302/compilers/llvm-project/llvm/include/llvm/Support/GenericLoopInfo.h \
+ /home/whe302/compilers/llvm-project/llvm/include/llvm/ADT/PostOrderIterator.h \
+ /home/whe302/compilers/llvm-project/llvm/include/llvm/ADT/SetOperations.h \
+ /home/whe302/compilers/llvm-project/llvm/include/llvm/Support/GenericDomTree.h \
+ /home/whe302/compilers/llvm-project/llvm/include/llvm/Support/CFGDiff.h \
+ /home/whe302/compilers/llvm-project/llvm/include/llvm/Support/CFGUpdate.h \
  /home/whe302/compilers/llvm-project/llvm/include/llvm/CodeGen/TargetInstrInfo.h \
  /home/whe302/compilers/llvm-project/llvm/include/llvm/ADT/Uniformity.h \
  /home/whe302/compilers/llvm-project/llvm/include/llvm/CodeGen/MIRFormatter.h \
@@ -355,29 +381,11 @@ lib/CMakeFiles/NVPTXArithIntensity.dir/NVPTXArithIntensityPass.cpp.o: \
  /home/whe302/compilers/llvm-project/llvm/include/llvm/CodeGen/GlobalISel/Utils.h \
  /home/whe302/compilers/llvm-project/llvm/include/llvm/CodeGen/GlobalISel/GISelWorkList.h \
  /home/whe302/compilers/llvm-project/llvm/include/llvm/CodeGen/MachineInstrBundle.h \
- /home/whe302/compilers/llvm-project/llvm/include/llvm/CodeGen/MachinePassManager.h \
- /home/whe302/compilers/llvm-project/llvm/include/llvm/ADT/FunctionExtras.h \
  /home/whe302/compilers/llvm-project/llvm/include/llvm/CodeGen/TargetRegisterInfo.h \
  /home/whe302/compilers/llvm-project/llvm/include/llvm/CodeGen/RegisterBank.h \
- /home/whe302/compilers/llvm-project/llvm/include/llvm/IR/CallingConv.h \
  /home/whe302/compilers/llvm-project/llvm/include/llvm/MC/MCRegisterInfo.h \
  /home/whe302/compilers/llvm-project/llvm/include/llvm/IR/InstrTypes.h \
- /home/whe302/compilers/llvm-project/llvm/include/llvm/IR/Attributes.h \
- /home/whe302/compilers/llvm-project/llvm/include/llvm/Support/ModRef.h \
- /home/whe302/compilers/llvm-project/build/include/llvm/IR/Attributes.inc \
  /home/whe302/compilers/llvm-project/llvm/include/llvm/IR/FMF.h \
- /home/whe302/compilers/llvm-project/llvm/include/llvm/IR/Function.h \
- /home/whe302/compilers/llvm-project/llvm/include/llvm/ADT/DenseSet.h \
- /home/whe302/compilers/llvm-project/llvm/include/llvm/IR/Argument.h \
- /home/whe302/compilers/llvm-project/llvm/include/llvm/IR/BasicBlock.h \
- /home/whe302/compilers/llvm-project/llvm/include/llvm/IR/DebugProgramInstruction.h \
- /home/whe302/compilers/llvm-project/llvm/include/llvm/IR/DbgVariableFragmentInfo.h \
- /home/whe302/compilers/llvm-project/llvm/include/llvm/IR/Instruction.h \
- /home/whe302/compilers/llvm-project/llvm/include/llvm/IR/SymbolTableListTraits.h \
- /home/whe302/compilers/llvm-project/llvm/include/llvm/IR/Instruction.def \
- /home/whe302/compilers/llvm-project/llvm/include/llvm/IR/GlobalObject.h \
- /home/whe302/compilers/llvm-project/llvm/include/llvm/IR/GlobalValue.h \
- /home/whe302/compilers/llvm-project/llvm/include/llvm/IR/OperandTraits.h \
  /home/whe302/compilers/llvm-project/llvm/include/llvm/CodeGen/MachineOutliner.h \
  /home/whe302/compilers/llvm-project/llvm/include/llvm/CodeGen/LiveRegUnits.h \
  /home/whe302/compilers/llvm-project/llvm/include/llvm/CodeGen/MachineRegisterInfo.h \

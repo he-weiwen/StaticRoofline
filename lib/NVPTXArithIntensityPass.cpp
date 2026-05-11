@@ -9,6 +9,7 @@
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstr.h"
+#include "llvm/CodeGen/MachineLoopInfo.h"
 #include "llvm/CodeGen/MachineMemOperand.h"
 #include "llvm/CodeGen/TargetInstrInfo.h"
 #include "llvm/CodeGen/TargetSubtargetInfo.h"
@@ -51,6 +52,30 @@ namespace {
         MemStats Mem;
     };
 
+    // Symbolic trip count for one machine loop. At MIR level this is only a
+    // stable loop identity; a later IR/SCEV integration can map it to a source
+    // expression such as K, ceil(K / 32), or a constant tile size.
+    struct LoopTripCountSymbol {
+        unsigned HeaderBlockNumber = 0;
+    };
+
+    // Symbolic execution count for one machine basic block, relative to one
+    // kernel invocation. It is represented as the product of enclosing machine
+    // loop trip-count symbols:
+    //   {}          => 1
+    //   {L3}        => L3
+    //   {L2, L10}   => L2 * L10
+    //
+    // This deliberately does not model conditional branch probability yet.
+    struct BasicBlockExecutionCount {
+        SmallVector<LoopTripCountSymbol, 4> Factors;
+
+        bool isOne() const { return Factors.empty(); }
+        unsigned getLoopDepth() const {
+            return static_cast<unsigned>(Factors.size());
+        }
+    };
+
     static MemStats &operator+=(MemStats &LHS, const MemStats &RHS) {
         LHS.GlobalLoadBytes += RHS.GlobalLoadBytes;
         LHS.GlobalStoreBytes += RHS.GlobalStoreBytes;
@@ -89,6 +114,84 @@ namespace {
         return Mem.LocalLoadBytes + Mem.LocalStoreBytes;
     }
 
+    // Dispatch a parsed inline-PTX OpClass into the existing BlockStats
+    // counters. std::visit gives us the exhaustiveness check: adding a new
+    // arm to ptxai::ptx::OpClass forces a compile error here unless we add
+    // a handler. Today's known arms:
+    //   FlopOp / MMAOp / MemoryOp / AsyncCopy / LdMatrix
+    //   WarpSync / Barrier / Ignore / Unknown
+    static void applyInlinePtxOpClass(BlockStats &Stats,
+                                      const ptxai::ptx::OpClass &PtxOp) {
+        std::visit([&](const auto &Op) {
+            using T = std::decay_t<decltype(Op)>;
+            if constexpr (std::is_same_v<T, ptxai::ptx::FlopOp>) {
+                // Currently only PerThread is wired; PerWarp will arrive
+                // with MMA. The MIR-side aggregator carries the same
+                // assertion to keep this consistent.
+                if (Op.scope != ptxai::InvocationScope::PerThread) return;
+                Stats.Flops += Op.flops;
+                switch (Op.precision) {
+                case ptxai::FpPrecision::F16:   Stats.FlopsF16   += Op.flops; break;
+                case ptxai::FpPrecision::BF16:  Stats.FlopsBF16  += Op.flops; break;
+                case ptxai::FpPrecision::F32:   Stats.FlopsF32   += Op.flops; break;
+                case ptxai::FpPrecision::F64:   Stats.FlopsF64   += Op.flops; break;
+                case ptxai::FpPrecision::Other: Stats.FlopsOther += Op.flops; break;
+                }
+            } else if constexpr (std::is_same_v<T, ptxai::ptx::MMAOp>) {
+                // PerWarp scope. Emit into a separate-scope counter once
+                // we wire warp-aware aggregation; for now log into
+                // FlopsOther so it's visible in the diagnostic without
+                // double-counting against per-thread totals.
+                Stats.FlopsOther += Op.flops;
+            } else if constexpr (std::is_same_v<T, ptxai::ptx::MemoryOp>) {
+                using namespace NVPTXAS;
+                auto bucket = [&](uint64_t &lo, uint64_t &st) {
+                    if (Op.isLoad)  lo += Op.bytes;
+                    if (Op.isStore) st += Op.bytes;
+                };
+                switch (Op.addrSpace) {
+                case ADDRESS_SPACE_GLOBAL:
+                    bucket(Stats.Mem.GlobalLoadBytes, Stats.Mem.GlobalStoreBytes);
+                    break;
+                case ADDRESS_SPACE_SHARED:
+                case ADDRESS_SPACE_SHARED_CLUSTER:
+                    bucket(Stats.Mem.SharedLoadBytes, Stats.Mem.SharedStoreBytes);
+                    break;
+                case ADDRESS_SPACE_LOCAL:
+                    bucket(Stats.Mem.LocalLoadBytes, Stats.Mem.LocalStoreBytes);
+                    break;
+                case ADDRESS_SPACE_CONST:
+                    bucket(Stats.Mem.ConstLoadBytes, Stats.Mem.ConstStoreBytes);
+                    break;
+                case ADDRESS_SPACE_ENTRY_PARAM:
+                    bucket(Stats.Mem.ParamLoadBytes, Stats.Mem.ParamStoreBytes);
+                    break;
+                default:
+                    Stats.Mem.UnknownBytes += Op.bytes;
+                    ++Stats.Mem.UnknownAccesses;
+                    break;
+                }
+            } else if constexpr (std::is_same_v<T, ptxai::ptx::AsyncCopy>) {
+                // cp.async family: shared <- global. Bytes optional (may be
+                // a runtime value). When known, attribute to both endpoints.
+                if (Op.bytes) {
+                    Stats.Mem.GlobalLoadBytes  += *Op.bytes;
+                    Stats.Mem.SharedStoreBytes += *Op.bytes;
+                }
+            } else if constexpr (std::is_same_v<T, ptxai::ptx::LdMatrix>) {
+                // Warp-cooperative shared->register transfer.
+                Stats.Mem.SharedLoadBytes += Op.bytes;
+            } else if constexpr (std::is_same_v<T, ptxai::ptx::WarpSync> ||
+                                 std::is_same_v<T, ptxai::ptx::Barrier>  ||
+                                 std::is_same_v<T, ptxai::ptx::Ignore>) {
+                // No FLOPs, no bytes by design.
+            } else if constexpr (std::is_same_v<T, ptxai::ptx::Unknown>) {
+                // Surface as unknown traffic so the diagnostic is non-zero.
+                ++Stats.Mem.UnknownAccesses;
+            }
+        }, PtxOp);
+    }
+
     static void addFlops(BlockStats &Stats, const ptxai::OpClass &Op) {
         // Today only PerThread sources exist in the classifier. When MMA
         // (PerWarp) lands, this aggregator MUST grow per-scope buckets:
@@ -124,8 +227,39 @@ namespace {
             StoreBytes += Bytes;
     }
 
-    static void recordMemory(BlockStats &Stats, const MachineInstr &MI) {
+    // Bucket `Bytes` into Stats.Mem according to `AddrSpace`. Used by both
+    // the MMO-driven path and the opcode-name-driven fallback.
+    static void bucketBytesByAddrSpace(BlockStats &Stats, unsigned AddrSpace,
+                                       uint64_t Bytes, bool IsLoad,
+                                       bool IsStore) {
+        auto add = [&](uint64_t &lo, uint64_t &st) {
+            if (IsLoad)  lo += Bytes;
+            if (IsStore) st += Bytes;
+        };
+        switch (AddrSpace) {
+        case NVPTXAS::ADDRESS_SPACE_GLOBAL:
+            add(Stats.Mem.GlobalLoadBytes, Stats.Mem.GlobalStoreBytes); break;
+        case NVPTXAS::ADDRESS_SPACE_SHARED:
+        case NVPTXAS::ADDRESS_SPACE_SHARED_CLUSTER:
+            add(Stats.Mem.SharedLoadBytes, Stats.Mem.SharedStoreBytes); break;
+        case NVPTXAS::ADDRESS_SPACE_LOCAL:
+            add(Stats.Mem.LocalLoadBytes,  Stats.Mem.LocalStoreBytes);  break;
+        case NVPTXAS::ADDRESS_SPACE_CONST:
+            add(Stats.Mem.ConstLoadBytes,  Stats.Mem.ConstStoreBytes);  break;
+        case NVPTXAS::ADDRESS_SPACE_ENTRY_PARAM:
+            add(Stats.Mem.ParamLoadBytes,  Stats.Mem.ParamStoreBytes);  break;
+        default:
+            Stats.Mem.UnknownBytes += Bytes;
+            ++Stats.Mem.UnknownAccesses;
+            break;
+        }
+    }
+
+    static void recordMemory(BlockStats &Stats, const MachineInstr &MI,
+                             const TargetInstrInfo &TII) {
+        bool sawAnyMMO = false;
         for (MachineMemOperand *MMO : MI.memoperands()) {
+            sawAnyMMO = true;
             LocationSize Size = MMO->getSize();
             if (!Size.hasValue() || Size.isScalable()) {
                 ++Stats.Mem.UnknownAccesses;
@@ -138,35 +272,25 @@ namespace {
                 ++Stats.Mem.UnknownAccesses;
                 continue;
             }
-
-            switch (MMO->getAddrSpace()) {
-            case NVPTXAS::ADDRESS_SPACE_GLOBAL:
-                addLoadStoreBytes(Stats.Mem.GlobalLoadBytes,
-                                  Stats.Mem.GlobalStoreBytes, Bytes, MI);
-                break;
-            case NVPTXAS::ADDRESS_SPACE_SHARED:
-            case NVPTXAS::ADDRESS_SPACE_SHARED_CLUSTER:
-                addLoadStoreBytes(Stats.Mem.SharedLoadBytes,
-                                  Stats.Mem.SharedStoreBytes, Bytes, MI);
-                break;
-            case NVPTXAS::ADDRESS_SPACE_LOCAL:
-                addLoadStoreBytes(Stats.Mem.LocalLoadBytes,
-                                  Stats.Mem.LocalStoreBytes, Bytes, MI);
-                break;
-            case NVPTXAS::ADDRESS_SPACE_CONST:
-                addLoadStoreBytes(Stats.Mem.ConstLoadBytes,
-                                  Stats.Mem.ConstStoreBytes, Bytes, MI);
-                break;
-            case NVPTXAS::ADDRESS_SPACE_ENTRY_PARAM:
-                addLoadStoreBytes(Stats.Mem.ParamLoadBytes,
-                                  Stats.Mem.ParamStoreBytes, Bytes, MI);
-                break;
-            default:
-                Stats.Mem.UnknownBytes += Bytes;
-                ++Stats.Mem.UnknownAccesses;
-                break;
-            }
+            bucketBytesByAddrSpace(Stats, MMO->getAddrSpace(), Bytes,
+                                    MI.mayLoad(), MI.mayStore());
         }
+
+        // Opcode-name-driven fallback for loads/stores that lack MMOs.
+        // The dominant case is the LDG family (LD_GLOBAL_NC_*, LDU_GLOBAL_*),
+        // emitted when CUDA code uses __restrict__ on input pointers — the
+        // NVPTX backend doesn't attach MMOs to these.
+        //
+        // Note: we deliberately do NOT gate on MI.mayLoad()/mayStore().
+        // NVPTX's LD_GLOBAL_NC_* family is tagged with UnmodeledSideEffects
+        // instead of MayLoad in the auto-generated MCInstrDesc, so those
+        // queries return false. The opcode-name pattern itself is the
+        // authoritative signal — `parseMemoryOpcodeName` returns nullopt
+        // for anything that doesn't match a known load/store family.
+        if (sawAnyMMO) return;
+        if (auto info = ptxai::parseMemoryOpcodeName(TII.getName(MI.getOpcode())))
+            bucketBytesByAddrSpace(Stats, info->addrSpace, info->bytes,
+                                    info->isLoad, info->isStore);
     }
 
     static void printMemoryStats(const MemStats &Mem) {
@@ -197,20 +321,56 @@ namespace {
                << " flops_bf16=" << Stats.FlopsBF16
                << " flops_f32=" << Stats.FlopsF32
                << " flops_f64=" << Stats.FlopsF64
+               << " flops_other=" << Stats.FlopsOther
                << " global_bytes=" << GlobalBytes
                << " local_bytes=" << getLocalBytes(Stats.Mem)
                << " ai=";
         printDensity(Stats.Flops, GlobalBytes);
     }
 
+    static BasicBlockExecutionCount
+    getExecutionCountForBlock(const MachineBasicBlock &MBB,
+                              const MachineLoopInfo &MLI) {
+        SmallVector<const MachineLoop *, 4> LoopNest;
+        for (const MachineLoop *Loop = MLI.getLoopFor(&MBB); Loop;
+             Loop = Loop->getParentLoop())
+            LoopNest.push_back(Loop);
+
+        BasicBlockExecutionCount Count;
+        for (const MachineLoop *Loop : llvm::reverse(LoopNest))
+            Count.Factors.push_back(
+                {static_cast<unsigned>(Loop->getHeader()->getNumber())});
+        return Count;
+    }
+
+    static void printExecutionCount(raw_ostream &OS,
+                                    const BasicBlockExecutionCount &Count) {
+        if (Count.isOne()) {
+            OS << "1";
+            return;
+        }
+
+        bool First = true;
+        for (const LoopTripCountSymbol &Factor : Count.Factors) {
+            if (!First)
+                OS << "*";
+            First = false;
+            OS << "L" << Factor.HeaderBlockNumber;
+        }
+    }
+
     static void printBlockStats(const MachineBasicBlock &MBB,
                                 const BlockStats &Stats,
-                                const TargetInstrInfo &TII) {
+                                const TargetInstrInfo &TII,
+                                const MachineLoopInfo &MLI) {
         errs() << "  bb." << MBB.getNumber();
         if (const BasicBlock *BB = MBB.getBasicBlock()) {
             if (BB->hasName())
                 errs() << "." << BB->getName();
         }
+        BasicBlockExecutionCount Count = getExecutionCountForBlock(MBB, MLI);
+        errs() << " loop_depth=" << Count.getLoopDepth() << " exec_count=";
+        printExecutionCount(errs(), Count);
         printFlopsAndBytes(Stats);
         errs() << "\n";
 
@@ -235,6 +395,7 @@ namespace {
         StringRef getPassName() const override { return "NVPTX Arithmetic Intensity"; }
 
         void getAnalysisUsage(AnalysisUsage &AU) const override {
+            AU.addRequired<MachineLoopInfoWrapperPass>();
             AU.setPreservesAll();
             MachineFunctionPass::getAnalysisUsage(AU);
         }
@@ -243,6 +404,8 @@ namespace {
             uint64_t Blocks = 0;
             BlockStats Total;
             const TargetInstrInfo *TII = MF.getSubtarget().getInstrInfo();
+            const MachineLoopInfo &MLI =
+                getAnalysis<MachineLoopInfoWrapperPass>().getLI();
 
             errs() << "kernel " << MF.getName() << "\n";
 
@@ -257,17 +420,23 @@ namespace {
                     ++Stats.Instrs;
                     ++Stats.OpcodeCounts[MI.getOpcode()];
 
-                    // INLINEASM integration point. Once PTX/Classifier.cpp
-                    // is implemented, this branch parses the asm body and
-                    // dispatches each statement's OpClass into the same
-                    // BlockStats counters. For now the parse() call returns
-                    // empty, so inline asm contributes only via whatever
-                    // MMOs LLVM happened to attach (typically none).
+                    // INLINEASM: extract the asm body and route each
+                    // parsed PTX statement through the inline-PTX
+                    // classifier. Operand 0 of an INLINEASM MI is the
+                    // asm string (per llvm/IR/InlineAsm.h: MIOp_AsmString = 0).
                     if (MI.isInlineAsm()) {
-                        // TODO: extract asm string from MI operand 0,
-                        // call ptx::parse + ptx::classify per stmt,
-                        // route variant arms into addFlops/recordMemory.
-                        recordMemory(Stats, MI);
+                        const char *Asm = MI.getOperand(0).getSymbolName();
+                        if (Asm && *Asm) {
+                            for (const ptxai::ptx::Stmt &S :
+                                 ptxai::ptx::parse(StringRef(Asm))) {
+                                applyInlinePtxOpClass(Stats,
+                                                       ptxai::ptx::classify(S));
+                            }
+                        }
+                        // Still record any MMOs LLVM attached to the
+                        // INLINEASM (rare but possible on some atomic
+                        // intrinsics).
+                        recordMemory(Stats, MI, *TII);
                         continue;
                     }
 
@@ -275,10 +444,10 @@ namespace {
                         ptxai::classify(TII->getName(MI.getOpcode()));
                     if (Op.isFlopProducer())
                         addFlops(Stats, Op);
-                    recordMemory(Stats, MI);
+                    recordMemory(Stats, MI, *TII);
                 }
 
-                printBlockStats(MBB, Stats, *TII);
+                printBlockStats(MBB, Stats, *TII, MLI);
                 Total += Stats;
             }
 

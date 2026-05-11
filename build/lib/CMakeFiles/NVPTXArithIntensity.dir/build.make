@@ -83,81 +83,25 @@ lib/CMakeFiles/NVPTXArithIntensity.dir/NVPTXArithIntensityPass.cpp.s: cmake_forc
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/NVPTXArithIntensity.dir/NVPTXArithIntensityPass.cpp.s"
 	cd /home/whe302/compilers/nvptx_analyzer/build/lib && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/whe302/compilers/nvptx_analyzer/lib/NVPTXArithIntensityPass.cpp -o CMakeFiles/NVPTXArithIntensity.dir/NVPTXArithIntensityPass.cpp.s
 
-lib/CMakeFiles/NVPTXArithIntensity.dir/OpClassifier.cpp.o: lib/CMakeFiles/NVPTXArithIntensity.dir/flags.make
-lib/CMakeFiles/NVPTXArithIntensity.dir/OpClassifier.cpp.o: /home/whe302/compilers/nvptx_analyzer/lib/OpClassifier.cpp
-lib/CMakeFiles/NVPTXArithIntensity.dir/OpClassifier.cpp.o: lib/CMakeFiles/NVPTXArithIntensity.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/whe302/compilers/nvptx_analyzer/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building CXX object lib/CMakeFiles/NVPTXArithIntensity.dir/OpClassifier.cpp.o"
-	cd /home/whe302/compilers/nvptx_analyzer/build/lib && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT lib/CMakeFiles/NVPTXArithIntensity.dir/OpClassifier.cpp.o -MF CMakeFiles/NVPTXArithIntensity.dir/OpClassifier.cpp.o.d -o CMakeFiles/NVPTXArithIntensity.dir/OpClassifier.cpp.o -c /home/whe302/compilers/nvptx_analyzer/lib/OpClassifier.cpp
-
-lib/CMakeFiles/NVPTXArithIntensity.dir/OpClassifier.cpp.i: cmake_force
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/NVPTXArithIntensity.dir/OpClassifier.cpp.i"
-	cd /home/whe302/compilers/nvptx_analyzer/build/lib && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/whe302/compilers/nvptx_analyzer/lib/OpClassifier.cpp > CMakeFiles/NVPTXArithIntensity.dir/OpClassifier.cpp.i
-
-lib/CMakeFiles/NVPTXArithIntensity.dir/OpClassifier.cpp.s: cmake_force
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/NVPTXArithIntensity.dir/OpClassifier.cpp.s"
-	cd /home/whe302/compilers/nvptx_analyzer/build/lib && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/whe302/compilers/nvptx_analyzer/lib/OpClassifier.cpp -o CMakeFiles/NVPTXArithIntensity.dir/OpClassifier.cpp.s
-
-lib/CMakeFiles/NVPTXArithIntensity.dir/PTX/Tokenizer.cpp.o: lib/CMakeFiles/NVPTXArithIntensity.dir/flags.make
-lib/CMakeFiles/NVPTXArithIntensity.dir/PTX/Tokenizer.cpp.o: /home/whe302/compilers/nvptx_analyzer/lib/PTX/Tokenizer.cpp
-lib/CMakeFiles/NVPTXArithIntensity.dir/PTX/Tokenizer.cpp.o: lib/CMakeFiles/NVPTXArithIntensity.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/whe302/compilers/nvptx_analyzer/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building CXX object lib/CMakeFiles/NVPTXArithIntensity.dir/PTX/Tokenizer.cpp.o"
-	cd /home/whe302/compilers/nvptx_analyzer/build/lib && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT lib/CMakeFiles/NVPTXArithIntensity.dir/PTX/Tokenizer.cpp.o -MF CMakeFiles/NVPTXArithIntensity.dir/PTX/Tokenizer.cpp.o.d -o CMakeFiles/NVPTXArithIntensity.dir/PTX/Tokenizer.cpp.o -c /home/whe302/compilers/nvptx_analyzer/lib/PTX/Tokenizer.cpp
-
-lib/CMakeFiles/NVPTXArithIntensity.dir/PTX/Tokenizer.cpp.i: cmake_force
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/NVPTXArithIntensity.dir/PTX/Tokenizer.cpp.i"
-	cd /home/whe302/compilers/nvptx_analyzer/build/lib && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/whe302/compilers/nvptx_analyzer/lib/PTX/Tokenizer.cpp > CMakeFiles/NVPTXArithIntensity.dir/PTX/Tokenizer.cpp.i
-
-lib/CMakeFiles/NVPTXArithIntensity.dir/PTX/Tokenizer.cpp.s: cmake_force
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/NVPTXArithIntensity.dir/PTX/Tokenizer.cpp.s"
-	cd /home/whe302/compilers/nvptx_analyzer/build/lib && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/whe302/compilers/nvptx_analyzer/lib/PTX/Tokenizer.cpp -o CMakeFiles/NVPTXArithIntensity.dir/PTX/Tokenizer.cpp.s
-
-lib/CMakeFiles/NVPTXArithIntensity.dir/PTX/Parser.cpp.o: lib/CMakeFiles/NVPTXArithIntensity.dir/flags.make
-lib/CMakeFiles/NVPTXArithIntensity.dir/PTX/Parser.cpp.o: /home/whe302/compilers/nvptx_analyzer/lib/PTX/Parser.cpp
-lib/CMakeFiles/NVPTXArithIntensity.dir/PTX/Parser.cpp.o: lib/CMakeFiles/NVPTXArithIntensity.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/whe302/compilers/nvptx_analyzer/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Building CXX object lib/CMakeFiles/NVPTXArithIntensity.dir/PTX/Parser.cpp.o"
-	cd /home/whe302/compilers/nvptx_analyzer/build/lib && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT lib/CMakeFiles/NVPTXArithIntensity.dir/PTX/Parser.cpp.o -MF CMakeFiles/NVPTXArithIntensity.dir/PTX/Parser.cpp.o.d -o CMakeFiles/NVPTXArithIntensity.dir/PTX/Parser.cpp.o -c /home/whe302/compilers/nvptx_analyzer/lib/PTX/Parser.cpp
-
-lib/CMakeFiles/NVPTXArithIntensity.dir/PTX/Parser.cpp.i: cmake_force
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/NVPTXArithIntensity.dir/PTX/Parser.cpp.i"
-	cd /home/whe302/compilers/nvptx_analyzer/build/lib && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/whe302/compilers/nvptx_analyzer/lib/PTX/Parser.cpp > CMakeFiles/NVPTXArithIntensity.dir/PTX/Parser.cpp.i
-
-lib/CMakeFiles/NVPTXArithIntensity.dir/PTX/Parser.cpp.s: cmake_force
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/NVPTXArithIntensity.dir/PTX/Parser.cpp.s"
-	cd /home/whe302/compilers/nvptx_analyzer/build/lib && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/whe302/compilers/nvptx_analyzer/lib/PTX/Parser.cpp -o CMakeFiles/NVPTXArithIntensity.dir/PTX/Parser.cpp.s
-
-lib/CMakeFiles/NVPTXArithIntensity.dir/PTX/Classifier.cpp.o: lib/CMakeFiles/NVPTXArithIntensity.dir/flags.make
-lib/CMakeFiles/NVPTXArithIntensity.dir/PTX/Classifier.cpp.o: /home/whe302/compilers/nvptx_analyzer/lib/PTX/Classifier.cpp
-lib/CMakeFiles/NVPTXArithIntensity.dir/PTX/Classifier.cpp.o: lib/CMakeFiles/NVPTXArithIntensity.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/whe302/compilers/nvptx_analyzer/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Building CXX object lib/CMakeFiles/NVPTXArithIntensity.dir/PTX/Classifier.cpp.o"
-	cd /home/whe302/compilers/nvptx_analyzer/build/lib && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT lib/CMakeFiles/NVPTXArithIntensity.dir/PTX/Classifier.cpp.o -MF CMakeFiles/NVPTXArithIntensity.dir/PTX/Classifier.cpp.o.d -o CMakeFiles/NVPTXArithIntensity.dir/PTX/Classifier.cpp.o -c /home/whe302/compilers/nvptx_analyzer/lib/PTX/Classifier.cpp
-
-lib/CMakeFiles/NVPTXArithIntensity.dir/PTX/Classifier.cpp.i: cmake_force
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/NVPTXArithIntensity.dir/PTX/Classifier.cpp.i"
-	cd /home/whe302/compilers/nvptx_analyzer/build/lib && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/whe302/compilers/nvptx_analyzer/lib/PTX/Classifier.cpp > CMakeFiles/NVPTXArithIntensity.dir/PTX/Classifier.cpp.i
-
-lib/CMakeFiles/NVPTXArithIntensity.dir/PTX/Classifier.cpp.s: cmake_force
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/NVPTXArithIntensity.dir/PTX/Classifier.cpp.s"
-	cd /home/whe302/compilers/nvptx_analyzer/build/lib && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/whe302/compilers/nvptx_analyzer/lib/PTX/Classifier.cpp -o CMakeFiles/NVPTXArithIntensity.dir/PTX/Classifier.cpp.s
-
 # Object files for target NVPTXArithIntensity
 NVPTXArithIntensity_OBJECTS = \
-"CMakeFiles/NVPTXArithIntensity.dir/NVPTXArithIntensityPass.cpp.o" \
-"CMakeFiles/NVPTXArithIntensity.dir/OpClassifier.cpp.o" \
-"CMakeFiles/NVPTXArithIntensity.dir/PTX/Tokenizer.cpp.o" \
-"CMakeFiles/NVPTXArithIntensity.dir/PTX/Parser.cpp.o" \
-"CMakeFiles/NVPTXArithIntensity.dir/PTX/Classifier.cpp.o"
+"CMakeFiles/NVPTXArithIntensity.dir/NVPTXArithIntensityPass.cpp.o"
 
 # External object files for target NVPTXArithIntensity
-NVPTXArithIntensity_EXTERNAL_OBJECTS =
+NVPTXArithIntensity_EXTERNAL_OBJECTS = \
+"/home/whe302/compilers/nvptx_analyzer/build/lib/CMakeFiles/ptxai_ptx.dir/PTX/Tokenizer.cpp.o" \
+"/home/whe302/compilers/nvptx_analyzer/build/lib/CMakeFiles/ptxai_ptx.dir/PTX/Parser.cpp.o" \
+"/home/whe302/compilers/nvptx_analyzer/build/lib/CMakeFiles/ptxai_ptx.dir/PTX/Classifier.cpp.o" \
+"/home/whe302/compilers/nvptx_analyzer/build/lib/CMakeFiles/ptxai_ptx.dir/OpClassifier.cpp.o"
 
 lib/NVPTXArithIntensity.so: lib/CMakeFiles/NVPTXArithIntensity.dir/NVPTXArithIntensityPass.cpp.o
-lib/NVPTXArithIntensity.so: lib/CMakeFiles/NVPTXArithIntensity.dir/OpClassifier.cpp.o
-lib/NVPTXArithIntensity.so: lib/CMakeFiles/NVPTXArithIntensity.dir/PTX/Tokenizer.cpp.o
-lib/NVPTXArithIntensity.so: lib/CMakeFiles/NVPTXArithIntensity.dir/PTX/Parser.cpp.o
-lib/NVPTXArithIntensity.so: lib/CMakeFiles/NVPTXArithIntensity.dir/PTX/Classifier.cpp.o
+lib/NVPTXArithIntensity.so: lib/CMakeFiles/ptxai_ptx.dir/PTX/Tokenizer.cpp.o
+lib/NVPTXArithIntensity.so: lib/CMakeFiles/ptxai_ptx.dir/PTX/Parser.cpp.o
+lib/NVPTXArithIntensity.so: lib/CMakeFiles/ptxai_ptx.dir/PTX/Classifier.cpp.o
+lib/NVPTXArithIntensity.so: lib/CMakeFiles/ptxai_ptx.dir/OpClassifier.cpp.o
 lib/NVPTXArithIntensity.so: lib/CMakeFiles/NVPTXArithIntensity.dir/build.make
 lib/NVPTXArithIntensity.so: lib/CMakeFiles/NVPTXArithIntensity.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/whe302/compilers/nvptx_analyzer/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_6) "Linking CXX shared module NVPTXArithIntensity.so"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/whe302/compilers/nvptx_analyzer/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Linking CXX shared module NVPTXArithIntensity.so"
 	cd /home/whe302/compilers/nvptx_analyzer/build/lib && $(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/NVPTXArithIntensity.dir/link.txt --verbose=$(VERBOSE)
 
 # Rule to build all files generated by this target.

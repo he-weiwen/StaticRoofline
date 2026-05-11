@@ -86,6 +86,7 @@ clean: test/clean
 # Directory level rules for directory lib
 
 # Recursive "all" directory target.
+lib/all: lib/CMakeFiles/ptxai_ptx.dir/all
 lib/all: lib/CMakeFiles/NVPTXArithIntensity.dir/all
 .PHONY : lib/all
 
@@ -94,6 +95,7 @@ lib/preinstall:
 .PHONY : lib/preinstall
 
 # Recursive "clean" directory target.
+lib/clean: lib/CMakeFiles/ptxai_ptx.dir/clean
 lib/clean: lib/CMakeFiles/NVPTXArithIntensity.dir/clean
 lib/clean: lib/CMakeFiles/install-NVPTXArithIntensity.dir/clean
 lib/clean: lib/CMakeFiles/install-NVPTXArithIntensity-stripped.dir/clean
@@ -103,7 +105,7 @@ lib/clean: lib/CMakeFiles/install-NVPTXArithIntensity-stripped.dir/clean
 # Directory level rules for directory test
 
 # Recursive "all" directory target.
-test/all:
+test/all: test/CMakeFiles/ptx_unit_tests.dir/all
 .PHONY : test/all
 
 # Recursive "preinstall" directory target.
@@ -117,6 +119,12 @@ test/clean: test/CMakeFiles/test-add_f64.dir/clean
 test/clean: test/CMakeFiles/test-local.dir/clean
 test/clean: test/CMakeFiles/test-fma.dir/clean
 test/clean: test/CMakeFiles/test-fma_v2half.dir/clean
+test/clean: test/CMakeFiles/test-matmul_loops.dir/clean
+test/clean: test/CMakeFiles/test-matmul_tiled_loops.dir/clean
+test/clean: test/CMakeFiles/test-inline_asm_hfma2.dir/clean
+test/clean: test/CMakeFiles/test-ldg_restrict.dir/clean
+test/clean: test/CMakeFiles/ptx_unit_tests.dir/clean
+test/clean: test/CMakeFiles/test-ptx-unit.dir/clean
 test/clean: test/CMakeFiles/check.dir/clean
 test/clean: test/CMakeFiles/smoke-test.dir/clean
 .PHONY : test/clean
@@ -252,13 +260,39 @@ CMakeFiles/target_parser_gen.dir/clean:
 .PHONY : CMakeFiles/target_parser_gen.dir/clean
 
 #=============================================================================
+# Target rules for target lib/CMakeFiles/ptxai_ptx.dir
+
+# All Build rule for target.
+lib/CMakeFiles/ptxai_ptx.dir/all:
+	$(MAKE) $(MAKESILENT) -f lib/CMakeFiles/ptxai_ptx.dir/build.make lib/CMakeFiles/ptxai_ptx.dir/depend
+	$(MAKE) $(MAKESILENT) -f lib/CMakeFiles/ptxai_ptx.dir/build.make lib/CMakeFiles/ptxai_ptx.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/whe302/compilers/nvptx_analyzer/build/CMakeFiles --progress-num=6,7,8,9 "Built target ptxai_ptx"
+.PHONY : lib/CMakeFiles/ptxai_ptx.dir/all
+
+# Build rule for subdir invocation for target.
+lib/CMakeFiles/ptxai_ptx.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/whe302/compilers/nvptx_analyzer/build/CMakeFiles 4
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 lib/CMakeFiles/ptxai_ptx.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/whe302/compilers/nvptx_analyzer/build/CMakeFiles 0
+.PHONY : lib/CMakeFiles/ptxai_ptx.dir/rule
+
+# Convenience name for target.
+ptxai_ptx: lib/CMakeFiles/ptxai_ptx.dir/rule
+.PHONY : ptxai_ptx
+
+# clean rule for target.
+lib/CMakeFiles/ptxai_ptx.dir/clean:
+	$(MAKE) $(MAKESILENT) -f lib/CMakeFiles/ptxai_ptx.dir/build.make lib/CMakeFiles/ptxai_ptx.dir/clean
+.PHONY : lib/CMakeFiles/ptxai_ptx.dir/clean
+
+#=============================================================================
 # Target rules for target lib/CMakeFiles/NVPTXArithIntensity.dir
 
 # All Build rule for target.
-lib/CMakeFiles/NVPTXArithIntensity.dir/all:
+lib/CMakeFiles/NVPTXArithIntensity.dir/all: lib/CMakeFiles/ptxai_ptx.dir/all
 	$(MAKE) $(MAKESILENT) -f lib/CMakeFiles/NVPTXArithIntensity.dir/build.make lib/CMakeFiles/NVPTXArithIntensity.dir/depend
 	$(MAKE) $(MAKESILENT) -f lib/CMakeFiles/NVPTXArithIntensity.dir/build.make lib/CMakeFiles/NVPTXArithIntensity.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/whe302/compilers/nvptx_analyzer/build/CMakeFiles --progress-num=1,2,3,4,5,6 "Built target NVPTXArithIntensity"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/whe302/compilers/nvptx_analyzer/build/CMakeFiles --progress-num=1,2 "Built target NVPTXArithIntensity"
 .PHONY : lib/CMakeFiles/NVPTXArithIntensity.dir/all
 
 # Build rule for subdir invocation for target.
@@ -336,7 +370,7 @@ lib/CMakeFiles/install-NVPTXArithIntensity-stripped.dir/clean:
 test/CMakeFiles/test-smoke.dir/all: lib/CMakeFiles/NVPTXArithIntensity.dir/all
 	$(MAKE) $(MAKESILENT) -f test/CMakeFiles/test-smoke.dir/build.make test/CMakeFiles/test-smoke.dir/depend
 	$(MAKE) $(MAKESILENT) -f test/CMakeFiles/test-smoke.dir/build.make test/CMakeFiles/test-smoke.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/whe302/compilers/nvptx_analyzer/build/CMakeFiles --progress-num=19,20 "Built target test-smoke"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/whe302/compilers/nvptx_analyzer/build/CMakeFiles --progress-num=34,35 "Built target test-smoke"
 .PHONY : test/CMakeFiles/test-smoke.dir/all
 
 # Build rule for subdir invocation for target.
@@ -362,7 +396,7 @@ test/CMakeFiles/test-smoke.dir/clean:
 test/CMakeFiles/test-fsub.dir/all: lib/CMakeFiles/NVPTXArithIntensity.dir/all
 	$(MAKE) $(MAKESILENT) -f test/CMakeFiles/test-fsub.dir/build.make test/CMakeFiles/test-fsub.dir/depend
 	$(MAKE) $(MAKESILENT) -f test/CMakeFiles/test-fsub.dir/build.make test/CMakeFiles/test-fsub.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/whe302/compilers/nvptx_analyzer/build/CMakeFiles --progress-num=15,16 "Built target test-fsub"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/whe302/compilers/nvptx_analyzer/build/CMakeFiles --progress-num=17,18 "Built target test-fsub"
 .PHONY : test/CMakeFiles/test-fsub.dir/all
 
 # Build rule for subdir invocation for target.
@@ -388,7 +422,7 @@ test/CMakeFiles/test-fsub.dir/clean:
 test/CMakeFiles/test-add_f64.dir/all: lib/CMakeFiles/NVPTXArithIntensity.dir/all
 	$(MAKE) $(MAKESILENT) -f test/CMakeFiles/test-add_f64.dir/build.make test/CMakeFiles/test-add_f64.dir/depend
 	$(MAKE) $(MAKESILENT) -f test/CMakeFiles/test-add_f64.dir/build.make test/CMakeFiles/test-add_f64.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/whe302/compilers/nvptx_analyzer/build/CMakeFiles --progress-num=8,9 "Built target test-add_f64"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/whe302/compilers/nvptx_analyzer/build/CMakeFiles --progress-num=10,11 "Built target test-add_f64"
 .PHONY : test/CMakeFiles/test-add_f64.dir/all
 
 # Build rule for subdir invocation for target.
@@ -414,7 +448,7 @@ test/CMakeFiles/test-add_f64.dir/clean:
 test/CMakeFiles/test-local.dir/all: lib/CMakeFiles/NVPTXArithIntensity.dir/all
 	$(MAKE) $(MAKESILENT) -f test/CMakeFiles/test-local.dir/build.make test/CMakeFiles/test-local.dir/depend
 	$(MAKE) $(MAKESILENT) -f test/CMakeFiles/test-local.dir/build.make test/CMakeFiles/test-local.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/whe302/compilers/nvptx_analyzer/build/CMakeFiles --progress-num=17,18 "Built target test-local"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/whe302/compilers/nvptx_analyzer/build/CMakeFiles --progress-num=25,26 "Built target test-local"
 .PHONY : test/CMakeFiles/test-local.dir/all
 
 # Build rule for subdir invocation for target.
@@ -440,7 +474,7 @@ test/CMakeFiles/test-local.dir/clean:
 test/CMakeFiles/test-fma.dir/all: lib/CMakeFiles/NVPTXArithIntensity.dir/all
 	$(MAKE) $(MAKESILENT) -f test/CMakeFiles/test-fma.dir/build.make test/CMakeFiles/test-fma.dir/depend
 	$(MAKE) $(MAKESILENT) -f test/CMakeFiles/test-fma.dir/build.make test/CMakeFiles/test-fma.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/whe302/compilers/nvptx_analyzer/build/CMakeFiles --progress-num=10,11 "Built target test-fma"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/whe302/compilers/nvptx_analyzer/build/CMakeFiles --progress-num=12,13 "Built target test-fma"
 .PHONY : test/CMakeFiles/test-fma.dir/all
 
 # Build rule for subdir invocation for target.
@@ -466,7 +500,7 @@ test/CMakeFiles/test-fma.dir/clean:
 test/CMakeFiles/test-fma_v2half.dir/all: lib/CMakeFiles/NVPTXArithIntensity.dir/all
 	$(MAKE) $(MAKESILENT) -f test/CMakeFiles/test-fma_v2half.dir/build.make test/CMakeFiles/test-fma_v2half.dir/depend
 	$(MAKE) $(MAKESILENT) -f test/CMakeFiles/test-fma_v2half.dir/build.make test/CMakeFiles/test-fma_v2half.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/whe302/compilers/nvptx_analyzer/build/CMakeFiles --progress-num=12,13,14 "Built target test-fma_v2half"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/whe302/compilers/nvptx_analyzer/build/CMakeFiles --progress-num=14,15,16 "Built target test-fma_v2half"
 .PHONY : test/CMakeFiles/test-fma_v2half.dir/all
 
 # Build rule for subdir invocation for target.
@@ -486,6 +520,162 @@ test/CMakeFiles/test-fma_v2half.dir/clean:
 .PHONY : test/CMakeFiles/test-fma_v2half.dir/clean
 
 #=============================================================================
+# Target rules for target test/CMakeFiles/test-matmul_loops.dir
+
+# All Build rule for target.
+test/CMakeFiles/test-matmul_loops.dir/all: lib/CMakeFiles/NVPTXArithIntensity.dir/all
+	$(MAKE) $(MAKESILENT) -f test/CMakeFiles/test-matmul_loops.dir/build.make test/CMakeFiles/test-matmul_loops.dir/depend
+	$(MAKE) $(MAKESILENT) -f test/CMakeFiles/test-matmul_loops.dir/build.make test/CMakeFiles/test-matmul_loops.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/whe302/compilers/nvptx_analyzer/build/CMakeFiles --progress-num=27,28,29 "Built target test-matmul_loops"
+.PHONY : test/CMakeFiles/test-matmul_loops.dir/all
+
+# Build rule for subdir invocation for target.
+test/CMakeFiles/test-matmul_loops.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/whe302/compilers/nvptx_analyzer/build/CMakeFiles 9
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test/CMakeFiles/test-matmul_loops.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/whe302/compilers/nvptx_analyzer/build/CMakeFiles 0
+.PHONY : test/CMakeFiles/test-matmul_loops.dir/rule
+
+# Convenience name for target.
+test-matmul_loops: test/CMakeFiles/test-matmul_loops.dir/rule
+.PHONY : test-matmul_loops
+
+# clean rule for target.
+test/CMakeFiles/test-matmul_loops.dir/clean:
+	$(MAKE) $(MAKESILENT) -f test/CMakeFiles/test-matmul_loops.dir/build.make test/CMakeFiles/test-matmul_loops.dir/clean
+.PHONY : test/CMakeFiles/test-matmul_loops.dir/clean
+
+#=============================================================================
+# Target rules for target test/CMakeFiles/test-matmul_tiled_loops.dir
+
+# All Build rule for target.
+test/CMakeFiles/test-matmul_tiled_loops.dir/all: lib/CMakeFiles/NVPTXArithIntensity.dir/all
+	$(MAKE) $(MAKESILENT) -f test/CMakeFiles/test-matmul_tiled_loops.dir/build.make test/CMakeFiles/test-matmul_tiled_loops.dir/depend
+	$(MAKE) $(MAKESILENT) -f test/CMakeFiles/test-matmul_tiled_loops.dir/build.make test/CMakeFiles/test-matmul_tiled_loops.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/whe302/compilers/nvptx_analyzer/build/CMakeFiles --progress-num=30,31,32 "Built target test-matmul_tiled_loops"
+.PHONY : test/CMakeFiles/test-matmul_tiled_loops.dir/all
+
+# Build rule for subdir invocation for target.
+test/CMakeFiles/test-matmul_tiled_loops.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/whe302/compilers/nvptx_analyzer/build/CMakeFiles 9
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test/CMakeFiles/test-matmul_tiled_loops.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/whe302/compilers/nvptx_analyzer/build/CMakeFiles 0
+.PHONY : test/CMakeFiles/test-matmul_tiled_loops.dir/rule
+
+# Convenience name for target.
+test-matmul_tiled_loops: test/CMakeFiles/test-matmul_tiled_loops.dir/rule
+.PHONY : test-matmul_tiled_loops
+
+# clean rule for target.
+test/CMakeFiles/test-matmul_tiled_loops.dir/clean:
+	$(MAKE) $(MAKESILENT) -f test/CMakeFiles/test-matmul_tiled_loops.dir/build.make test/CMakeFiles/test-matmul_tiled_loops.dir/clean
+.PHONY : test/CMakeFiles/test-matmul_tiled_loops.dir/clean
+
+#=============================================================================
+# Target rules for target test/CMakeFiles/test-inline_asm_hfma2.dir
+
+# All Build rule for target.
+test/CMakeFiles/test-inline_asm_hfma2.dir/all: lib/CMakeFiles/NVPTXArithIntensity.dir/all
+	$(MAKE) $(MAKESILENT) -f test/CMakeFiles/test-inline_asm_hfma2.dir/build.make test/CMakeFiles/test-inline_asm_hfma2.dir/depend
+	$(MAKE) $(MAKESILENT) -f test/CMakeFiles/test-inline_asm_hfma2.dir/build.make test/CMakeFiles/test-inline_asm_hfma2.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/whe302/compilers/nvptx_analyzer/build/CMakeFiles --progress-num=19,20,21 "Built target test-inline_asm_hfma2"
+.PHONY : test/CMakeFiles/test-inline_asm_hfma2.dir/all
+
+# Build rule for subdir invocation for target.
+test/CMakeFiles/test-inline_asm_hfma2.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/whe302/compilers/nvptx_analyzer/build/CMakeFiles 9
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test/CMakeFiles/test-inline_asm_hfma2.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/whe302/compilers/nvptx_analyzer/build/CMakeFiles 0
+.PHONY : test/CMakeFiles/test-inline_asm_hfma2.dir/rule
+
+# Convenience name for target.
+test-inline_asm_hfma2: test/CMakeFiles/test-inline_asm_hfma2.dir/rule
+.PHONY : test-inline_asm_hfma2
+
+# clean rule for target.
+test/CMakeFiles/test-inline_asm_hfma2.dir/clean:
+	$(MAKE) $(MAKESILENT) -f test/CMakeFiles/test-inline_asm_hfma2.dir/build.make test/CMakeFiles/test-inline_asm_hfma2.dir/clean
+.PHONY : test/CMakeFiles/test-inline_asm_hfma2.dir/clean
+
+#=============================================================================
+# Target rules for target test/CMakeFiles/test-ldg_restrict.dir
+
+# All Build rule for target.
+test/CMakeFiles/test-ldg_restrict.dir/all: lib/CMakeFiles/NVPTXArithIntensity.dir/all
+	$(MAKE) $(MAKESILENT) -f test/CMakeFiles/test-ldg_restrict.dir/build.make test/CMakeFiles/test-ldg_restrict.dir/depend
+	$(MAKE) $(MAKESILENT) -f test/CMakeFiles/test-ldg_restrict.dir/build.make test/CMakeFiles/test-ldg_restrict.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/whe302/compilers/nvptx_analyzer/build/CMakeFiles --progress-num=22,23,24 "Built target test-ldg_restrict"
+.PHONY : test/CMakeFiles/test-ldg_restrict.dir/all
+
+# Build rule for subdir invocation for target.
+test/CMakeFiles/test-ldg_restrict.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/whe302/compilers/nvptx_analyzer/build/CMakeFiles 9
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test/CMakeFiles/test-ldg_restrict.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/whe302/compilers/nvptx_analyzer/build/CMakeFiles 0
+.PHONY : test/CMakeFiles/test-ldg_restrict.dir/rule
+
+# Convenience name for target.
+test-ldg_restrict: test/CMakeFiles/test-ldg_restrict.dir/rule
+.PHONY : test-ldg_restrict
+
+# clean rule for target.
+test/CMakeFiles/test-ldg_restrict.dir/clean:
+	$(MAKE) $(MAKESILENT) -f test/CMakeFiles/test-ldg_restrict.dir/build.make test/CMakeFiles/test-ldg_restrict.dir/clean
+.PHONY : test/CMakeFiles/test-ldg_restrict.dir/clean
+
+#=============================================================================
+# Target rules for target test/CMakeFiles/ptx_unit_tests.dir
+
+# All Build rule for target.
+test/CMakeFiles/ptx_unit_tests.dir/all: lib/CMakeFiles/ptxai_ptx.dir/all
+	$(MAKE) $(MAKESILENT) -f test/CMakeFiles/ptx_unit_tests.dir/build.make test/CMakeFiles/ptx_unit_tests.dir/depend
+	$(MAKE) $(MAKESILENT) -f test/CMakeFiles/ptx_unit_tests.dir/build.make test/CMakeFiles/ptx_unit_tests.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/whe302/compilers/nvptx_analyzer/build/CMakeFiles --progress-num=4,5 "Built target ptx_unit_tests"
+.PHONY : test/CMakeFiles/ptx_unit_tests.dir/all
+
+# Build rule for subdir invocation for target.
+test/CMakeFiles/ptx_unit_tests.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/whe302/compilers/nvptx_analyzer/build/CMakeFiles 6
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test/CMakeFiles/ptx_unit_tests.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/whe302/compilers/nvptx_analyzer/build/CMakeFiles 0
+.PHONY : test/CMakeFiles/ptx_unit_tests.dir/rule
+
+# Convenience name for target.
+ptx_unit_tests: test/CMakeFiles/ptx_unit_tests.dir/rule
+.PHONY : ptx_unit_tests
+
+# clean rule for target.
+test/CMakeFiles/ptx_unit_tests.dir/clean:
+	$(MAKE) $(MAKESILENT) -f test/CMakeFiles/ptx_unit_tests.dir/build.make test/CMakeFiles/ptx_unit_tests.dir/clean
+.PHONY : test/CMakeFiles/ptx_unit_tests.dir/clean
+
+#=============================================================================
+# Target rules for target test/CMakeFiles/test-ptx-unit.dir
+
+# All Build rule for target.
+test/CMakeFiles/test-ptx-unit.dir/all: test/CMakeFiles/ptx_unit_tests.dir/all
+	$(MAKE) $(MAKESILENT) -f test/CMakeFiles/test-ptx-unit.dir/build.make test/CMakeFiles/test-ptx-unit.dir/depend
+	$(MAKE) $(MAKESILENT) -f test/CMakeFiles/test-ptx-unit.dir/build.make test/CMakeFiles/test-ptx-unit.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/whe302/compilers/nvptx_analyzer/build/CMakeFiles --progress-num=33 "Built target test-ptx-unit"
+.PHONY : test/CMakeFiles/test-ptx-unit.dir/all
+
+# Build rule for subdir invocation for target.
+test/CMakeFiles/test-ptx-unit.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/whe302/compilers/nvptx_analyzer/build/CMakeFiles 7
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test/CMakeFiles/test-ptx-unit.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/whe302/compilers/nvptx_analyzer/build/CMakeFiles 0
+.PHONY : test/CMakeFiles/test-ptx-unit.dir/rule
+
+# Convenience name for target.
+test-ptx-unit: test/CMakeFiles/test-ptx-unit.dir/rule
+.PHONY : test-ptx-unit
+
+# clean rule for target.
+test/CMakeFiles/test-ptx-unit.dir/clean:
+	$(MAKE) $(MAKESILENT) -f test/CMakeFiles/test-ptx-unit.dir/build.make test/CMakeFiles/test-ptx-unit.dir/clean
+.PHONY : test/CMakeFiles/test-ptx-unit.dir/clean
+
+#=============================================================================
 # Target rules for target test/CMakeFiles/check.dir
 
 # All Build rule for target.
@@ -495,14 +685,19 @@ test/CMakeFiles/check.dir/all: test/CMakeFiles/test-add_f64.dir/all
 test/CMakeFiles/check.dir/all: test/CMakeFiles/test-local.dir/all
 test/CMakeFiles/check.dir/all: test/CMakeFiles/test-fma.dir/all
 test/CMakeFiles/check.dir/all: test/CMakeFiles/test-fma_v2half.dir/all
+test/CMakeFiles/check.dir/all: test/CMakeFiles/test-matmul_loops.dir/all
+test/CMakeFiles/check.dir/all: test/CMakeFiles/test-matmul_tiled_loops.dir/all
+test/CMakeFiles/check.dir/all: test/CMakeFiles/test-inline_asm_hfma2.dir/all
+test/CMakeFiles/check.dir/all: test/CMakeFiles/test-ldg_restrict.dir/all
+test/CMakeFiles/check.dir/all: test/CMakeFiles/test-ptx-unit.dir/all
 	$(MAKE) $(MAKESILENT) -f test/CMakeFiles/check.dir/build.make test/CMakeFiles/check.dir/depend
 	$(MAKE) $(MAKESILENT) -f test/CMakeFiles/check.dir/build.make test/CMakeFiles/check.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/whe302/compilers/nvptx_analyzer/build/CMakeFiles --progress-num=7 "Built target check"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/whe302/compilers/nvptx_analyzer/build/CMakeFiles --progress-num=3 "Built target check"
 .PHONY : test/CMakeFiles/check.dir/all
 
 # Build rule for subdir invocation for target.
 test/CMakeFiles/check.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/whe302/compilers/nvptx_analyzer/build/CMakeFiles 20
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/whe302/compilers/nvptx_analyzer/build/CMakeFiles 35
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test/CMakeFiles/check.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/whe302/compilers/nvptx_analyzer/build/CMakeFiles 0
 .PHONY : test/CMakeFiles/check.dir/rule

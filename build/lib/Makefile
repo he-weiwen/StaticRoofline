@@ -162,6 +162,20 @@ depend:
 .PHONY : depend
 
 # Convenience name for target.
+lib/CMakeFiles/ptxai_ptx.dir/rule:
+	cd /home/whe302/compilers/nvptx_analyzer/build && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 lib/CMakeFiles/ptxai_ptx.dir/rule
+.PHONY : lib/CMakeFiles/ptxai_ptx.dir/rule
+
+# Convenience name for target.
+ptxai_ptx: lib/CMakeFiles/ptxai_ptx.dir/rule
+.PHONY : ptxai_ptx
+
+# fast build rule for target.
+ptxai_ptx/fast:
+	cd /home/whe302/compilers/nvptx_analyzer/build && $(MAKE) $(MAKESILENT) -f lib/CMakeFiles/ptxai_ptx.dir/build.make lib/CMakeFiles/ptxai_ptx.dir/build
+.PHONY : ptxai_ptx/fast
+
+# Convenience name for target.
 lib/CMakeFiles/NVPTXArithIntensity.dir/rule:
 	cd /home/whe302/compilers/nvptx_analyzer/build && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 lib/CMakeFiles/NVPTXArithIntensity.dir/rule
 .PHONY : lib/CMakeFiles/NVPTXArithIntensity.dir/rule
@@ -232,7 +246,7 @@ OpClassifier.o: OpClassifier.cpp.o
 
 # target to build an object file
 OpClassifier.cpp.o:
-	cd /home/whe302/compilers/nvptx_analyzer/build && $(MAKE) $(MAKESILENT) -f lib/CMakeFiles/NVPTXArithIntensity.dir/build.make lib/CMakeFiles/NVPTXArithIntensity.dir/OpClassifier.cpp.o
+	cd /home/whe302/compilers/nvptx_analyzer/build && $(MAKE) $(MAKESILENT) -f lib/CMakeFiles/ptxai_ptx.dir/build.make lib/CMakeFiles/ptxai_ptx.dir/OpClassifier.cpp.o
 .PHONY : OpClassifier.cpp.o
 
 OpClassifier.i: OpClassifier.cpp.i
@@ -240,7 +254,7 @@ OpClassifier.i: OpClassifier.cpp.i
 
 # target to preprocess a source file
 OpClassifier.cpp.i:
-	cd /home/whe302/compilers/nvptx_analyzer/build && $(MAKE) $(MAKESILENT) -f lib/CMakeFiles/NVPTXArithIntensity.dir/build.make lib/CMakeFiles/NVPTXArithIntensity.dir/OpClassifier.cpp.i
+	cd /home/whe302/compilers/nvptx_analyzer/build && $(MAKE) $(MAKESILENT) -f lib/CMakeFiles/ptxai_ptx.dir/build.make lib/CMakeFiles/ptxai_ptx.dir/OpClassifier.cpp.i
 .PHONY : OpClassifier.cpp.i
 
 OpClassifier.s: OpClassifier.cpp.s
@@ -248,7 +262,7 @@ OpClassifier.s: OpClassifier.cpp.s
 
 # target to generate assembly for a file
 OpClassifier.cpp.s:
-	cd /home/whe302/compilers/nvptx_analyzer/build && $(MAKE) $(MAKESILENT) -f lib/CMakeFiles/NVPTXArithIntensity.dir/build.make lib/CMakeFiles/NVPTXArithIntensity.dir/OpClassifier.cpp.s
+	cd /home/whe302/compilers/nvptx_analyzer/build && $(MAKE) $(MAKESILENT) -f lib/CMakeFiles/ptxai_ptx.dir/build.make lib/CMakeFiles/ptxai_ptx.dir/OpClassifier.cpp.s
 .PHONY : OpClassifier.cpp.s
 
 PTX/Classifier.o: PTX/Classifier.cpp.o
@@ -256,7 +270,7 @@ PTX/Classifier.o: PTX/Classifier.cpp.o
 
 # target to build an object file
 PTX/Classifier.cpp.o:
-	cd /home/whe302/compilers/nvptx_analyzer/build && $(MAKE) $(MAKESILENT) -f lib/CMakeFiles/NVPTXArithIntensity.dir/build.make lib/CMakeFiles/NVPTXArithIntensity.dir/PTX/Classifier.cpp.o
+	cd /home/whe302/compilers/nvptx_analyzer/build && $(MAKE) $(MAKESILENT) -f lib/CMakeFiles/ptxai_ptx.dir/build.make lib/CMakeFiles/ptxai_ptx.dir/PTX/Classifier.cpp.o
 .PHONY : PTX/Classifier.cpp.o
 
 PTX/Classifier.i: PTX/Classifier.cpp.i
@@ -264,7 +278,7 @@ PTX/Classifier.i: PTX/Classifier.cpp.i
 
 # target to preprocess a source file
 PTX/Classifier.cpp.i:
-	cd /home/whe302/compilers/nvptx_analyzer/build && $(MAKE) $(MAKESILENT) -f lib/CMakeFiles/NVPTXArithIntensity.dir/build.make lib/CMakeFiles/NVPTXArithIntensity.dir/PTX/Classifier.cpp.i
+	cd /home/whe302/compilers/nvptx_analyzer/build && $(MAKE) $(MAKESILENT) -f lib/CMakeFiles/ptxai_ptx.dir/build.make lib/CMakeFiles/ptxai_ptx.dir/PTX/Classifier.cpp.i
 .PHONY : PTX/Classifier.cpp.i
 
 PTX/Classifier.s: PTX/Classifier.cpp.s
@@ -272,7 +286,7 @@ PTX/Classifier.s: PTX/Classifier.cpp.s
 
 # target to generate assembly for a file
 PTX/Classifier.cpp.s:
-	cd /home/whe302/compilers/nvptx_analyzer/build && $(MAKE) $(MAKESILENT) -f lib/CMakeFiles/NVPTXArithIntensity.dir/build.make lib/CMakeFiles/NVPTXArithIntensity.dir/PTX/Classifier.cpp.s
+	cd /home/whe302/compilers/nvptx_analyzer/build && $(MAKE) $(MAKESILENT) -f lib/CMakeFiles/ptxai_ptx.dir/build.make lib/CMakeFiles/ptxai_ptx.dir/PTX/Classifier.cpp.s
 .PHONY : PTX/Classifier.cpp.s
 
 PTX/Parser.o: PTX/Parser.cpp.o
@@ -280,7 +294,7 @@ PTX/Parser.o: PTX/Parser.cpp.o
 
 # target to build an object file
 PTX/Parser.cpp.o:
-	cd /home/whe302/compilers/nvptx_analyzer/build && $(MAKE) $(MAKESILENT) -f lib/CMakeFiles/NVPTXArithIntensity.dir/build.make lib/CMakeFiles/NVPTXArithIntensity.dir/PTX/Parser.cpp.o
+	cd /home/whe302/compilers/nvptx_analyzer/build && $(MAKE) $(MAKESILENT) -f lib/CMakeFiles/ptxai_ptx.dir/build.make lib/CMakeFiles/ptxai_ptx.dir/PTX/Parser.cpp.o
 .PHONY : PTX/Parser.cpp.o
 
 PTX/Parser.i: PTX/Parser.cpp.i
@@ -288,7 +302,7 @@ PTX/Parser.i: PTX/Parser.cpp.i
 
 # target to preprocess a source file
 PTX/Parser.cpp.i:
-	cd /home/whe302/compilers/nvptx_analyzer/build && $(MAKE) $(MAKESILENT) -f lib/CMakeFiles/NVPTXArithIntensity.dir/build.make lib/CMakeFiles/NVPTXArithIntensity.dir/PTX/Parser.cpp.i
+	cd /home/whe302/compilers/nvptx_analyzer/build && $(MAKE) $(MAKESILENT) -f lib/CMakeFiles/ptxai_ptx.dir/build.make lib/CMakeFiles/ptxai_ptx.dir/PTX/Parser.cpp.i
 .PHONY : PTX/Parser.cpp.i
 
 PTX/Parser.s: PTX/Parser.cpp.s
@@ -296,7 +310,7 @@ PTX/Parser.s: PTX/Parser.cpp.s
 
 # target to generate assembly for a file
 PTX/Parser.cpp.s:
-	cd /home/whe302/compilers/nvptx_analyzer/build && $(MAKE) $(MAKESILENT) -f lib/CMakeFiles/NVPTXArithIntensity.dir/build.make lib/CMakeFiles/NVPTXArithIntensity.dir/PTX/Parser.cpp.s
+	cd /home/whe302/compilers/nvptx_analyzer/build && $(MAKE) $(MAKESILENT) -f lib/CMakeFiles/ptxai_ptx.dir/build.make lib/CMakeFiles/ptxai_ptx.dir/PTX/Parser.cpp.s
 .PHONY : PTX/Parser.cpp.s
 
 PTX/Tokenizer.o: PTX/Tokenizer.cpp.o
@@ -304,7 +318,7 @@ PTX/Tokenizer.o: PTX/Tokenizer.cpp.o
 
 # target to build an object file
 PTX/Tokenizer.cpp.o:
-	cd /home/whe302/compilers/nvptx_analyzer/build && $(MAKE) $(MAKESILENT) -f lib/CMakeFiles/NVPTXArithIntensity.dir/build.make lib/CMakeFiles/NVPTXArithIntensity.dir/PTX/Tokenizer.cpp.o
+	cd /home/whe302/compilers/nvptx_analyzer/build && $(MAKE) $(MAKESILENT) -f lib/CMakeFiles/ptxai_ptx.dir/build.make lib/CMakeFiles/ptxai_ptx.dir/PTX/Tokenizer.cpp.o
 .PHONY : PTX/Tokenizer.cpp.o
 
 PTX/Tokenizer.i: PTX/Tokenizer.cpp.i
@@ -312,7 +326,7 @@ PTX/Tokenizer.i: PTX/Tokenizer.cpp.i
 
 # target to preprocess a source file
 PTX/Tokenizer.cpp.i:
-	cd /home/whe302/compilers/nvptx_analyzer/build && $(MAKE) $(MAKESILENT) -f lib/CMakeFiles/NVPTXArithIntensity.dir/build.make lib/CMakeFiles/NVPTXArithIntensity.dir/PTX/Tokenizer.cpp.i
+	cd /home/whe302/compilers/nvptx_analyzer/build && $(MAKE) $(MAKESILENT) -f lib/CMakeFiles/ptxai_ptx.dir/build.make lib/CMakeFiles/ptxai_ptx.dir/PTX/Tokenizer.cpp.i
 .PHONY : PTX/Tokenizer.cpp.i
 
 PTX/Tokenizer.s: PTX/Tokenizer.cpp.s
@@ -320,7 +334,7 @@ PTX/Tokenizer.s: PTX/Tokenizer.cpp.s
 
 # target to generate assembly for a file
 PTX/Tokenizer.cpp.s:
-	cd /home/whe302/compilers/nvptx_analyzer/build && $(MAKE) $(MAKESILENT) -f lib/CMakeFiles/NVPTXArithIntensity.dir/build.make lib/CMakeFiles/NVPTXArithIntensity.dir/PTX/Tokenizer.cpp.s
+	cd /home/whe302/compilers/nvptx_analyzer/build && $(MAKE) $(MAKESILENT) -f lib/CMakeFiles/ptxai_ptx.dir/build.make lib/CMakeFiles/ptxai_ptx.dir/PTX/Tokenizer.cpp.s
 .PHONY : PTX/Tokenizer.cpp.s
 
 # Help Target
@@ -338,6 +352,7 @@ help:
 	@echo "... install-NVPTXArithIntensity"
 	@echo "... install-NVPTXArithIntensity-stripped"
 	@echo "... NVPTXArithIntensity"
+	@echo "... ptxai_ptx"
 	@echo "... NVPTXArithIntensityPass.o"
 	@echo "... NVPTXArithIntensityPass.i"
 	@echo "... NVPTXArithIntensityPass.s"
