@@ -178,24 +178,6 @@ namespace {
             ++Stats.Mem.UnknownAccesses;
     }
 
-    static void addFlops(BlockStats &Stats, const ptxai::OpClass &Op) {
-        // Today only PerThread sources exist in the classifier. When MMA
-        // (PerWarp) lands, this aggregator MUST grow per-scope buckets:
-        // collapsing PerWarp FLOPs into the per-thread total understates by
-        // ~32× per warp-cooperative instruction. Assert keeps that mistake
-        // visible the moment a non-PerThread classifier output is added.
-        assert(Op.scope == ptxai::InvocationScope::PerThread &&
-               "non-PerThread FLOP source needs scope-aware aggregation");
-        Stats.Flops += Op.flopsPerInvocation;
-        switch (Op.precision) {
-        case ptxai::FpPrecision::F16:   Stats.FlopsF16   += Op.flopsPerInvocation; break;
-        case ptxai::FpPrecision::BF16:  Stats.FlopsBF16  += Op.flopsPerInvocation; break;
-        case ptxai::FpPrecision::F32:   Stats.FlopsF32   += Op.flopsPerInvocation; break;
-        case ptxai::FpPrecision::F64:   Stats.FlopsF64   += Op.flopsPerInvocation; break;
-        case ptxai::FpPrecision::Other: Stats.FlopsOther += Op.flopsPerInvocation; break;
-        }
-    }
-
     static void printDensity(uint64_t FLOPs, uint64_t Bytes) {
         if (Bytes == 0) {
             errs() << "n/a";
@@ -205,40 +187,21 @@ namespace {
         errs() << format("%.6f", Density);
     }
 
-    static void addLoadStoreBytes(uint64_t &LoadBytes, uint64_t &StoreBytes,
-                                  uint64_t Bytes, const MachineInstr &MI) {
-        if (MI.mayLoad())
-            LoadBytes += Bytes;
-        if (MI.mayStore())
-            StoreBytes += Bytes;
-    }
-
-    // Bucket `Bytes` into Stats.Mem according to `AddrSpace`. Used by both
-    // the MMO-driven path and the opcode-name-driven fallback.
-    static void bucketBytesByAddrSpace(BlockStats &Stats, unsigned AddrSpace,
-                                       uint64_t Bytes, bool IsLoad,
-                                       bool IsStore) {
-        auto add = [&](uint64_t &lo, uint64_t &st) {
-            if (IsLoad)  lo += Bytes;
-            if (IsStore) st += Bytes;
-        };
-        switch (AddrSpace) {
-        case NVPTXAS::ADDRESS_SPACE_GLOBAL:
-            add(Stats.Mem.GlobalLoadBytes, Stats.Mem.GlobalStoreBytes); break;
-        case NVPTXAS::ADDRESS_SPACE_SHARED:
-        case NVPTXAS::ADDRESS_SPACE_SHARED_CLUSTER:
-            add(Stats.Mem.SharedLoadBytes, Stats.Mem.SharedStoreBytes); break;
-        case NVPTXAS::ADDRESS_SPACE_LOCAL:
-            add(Stats.Mem.LocalLoadBytes,  Stats.Mem.LocalStoreBytes);  break;
-        case NVPTXAS::ADDRESS_SPACE_CONST:
-            add(Stats.Mem.ConstLoadBytes,  Stats.Mem.ConstStoreBytes);  break;
-        case NVPTXAS::ADDRESS_SPACE_ENTRY_PARAM:
-            add(Stats.Mem.ParamLoadBytes,  Stats.Mem.ParamStoreBytes);  break;
-        default:
-            Stats.Mem.UnknownBytes += Bytes;
-            ++Stats.Mem.UnknownAccesses;
-            break;
-        }
+    // Build the Measurement that represents one MMO's byte traffic, or
+    // nullopt for diagnostic-only outcomes (size unknown / mayLoad &
+    // mayStore both false). The diagnostic bumps stay inline in
+    // recordMemory; they're not Measurements — they're "we saw something
+    // we couldn't quantify."
+    static std::optional<ptxai::Measurement>
+    measurementFromMMO(const MachineMemOperand &MMO, bool IsLoad, bool IsStore) {
+        ptxai::Measurement M;
+        M.kind = ptxai::Measurement::Kind::Memory;
+        M.scope = ptxai::InvocationScope::PerThread;
+        M.addrSpace = MMO.getAddrSpace();
+        M.isLoad = IsLoad;
+        M.isStore = IsStore;
+        M.count = MMO.getSize().getValue().getFixedValue();
+        return M;
     }
 
     static void recordMemory(BlockStats &Stats, const MachineInstr &MI,
@@ -258,8 +221,8 @@ namespace {
                 ++Stats.Mem.UnknownAccesses;
                 continue;
             }
-            bucketBytesByAddrSpace(Stats, MMO->getAddrSpace(), Bytes,
-                                    MI.mayLoad(), MI.mayStore());
+            if (auto M = measurementFromMMO(*MMO, MI.mayLoad(), MI.mayStore()))
+                applyToBlockStats(*M, Stats);
         }
 
         // Opcode-name-driven fallback for loads/stores that lack MMOs.
@@ -274,9 +237,13 @@ namespace {
         // authoritative signal — `parseMemoryOpcodeName` returns nullopt
         // for anything that doesn't match a known load/store family.
         if (sawAnyMMO) return;
-        if (auto info = ptxai::parseMemoryOpcodeName(TII.getName(MI.getOpcode())))
-            bucketBytesByAddrSpace(Stats, info->addrSpace, info->bytes,
-                                    info->isLoad, info->isStore);
+        if (auto info = ptxai::parseMemoryOpcodeName(TII.getName(MI.getOpcode()))) {
+            applyToBlockStats({ptxai::Measurement::Kind::Memory,
+                               ptxai::InvocationScope::PerThread,
+                               ptxai::FpPrecision::Other,
+                               info->addrSpace, info->isLoad, info->isStore,
+                               info->bytes}, Stats);
+        }
     }
 
     static void printMemoryStats(const MemStats &Mem) {
@@ -428,8 +395,8 @@ namespace {
 
                     ptxai::OpClass Op =
                         ptxai::classify(TII->getName(MI.getOpcode()));
-                    if (Op.isFlopProducer())
-                        addFlops(Stats, Op);
+                    for (const ptxai::Measurement &M : ptxai::toMeasurements(Op))
+                        applyToBlockStats(M, Stats);
                     recordMemory(Stats, MI, *TII);
                 }
 

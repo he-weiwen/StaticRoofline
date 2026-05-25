@@ -55,6 +55,22 @@ struct Measurement {
 llvm::SmallVector<Measurement, 2>
 toMeasurements(const ptx::OpClass &PtxOp);
 
+// MIR-side overload. Converts a classified MIR opcode into 0..1
+// Measurements:
+//
+//   ScalarFLOP, PerThread, flops>0 → 1 Flop measurement
+//   ScalarFLOP, !PerThread         → assertion failure (preserves the
+//                                    tripwire from the old addFlops; when
+//                                    Phase 3 MMA support lands on the MIR
+//                                    side, this branch grows scope-aware
+//                                    emission, not silent acceptance)
+//   anything else (None, MMA, …)   → 0 measurements (today's MIR
+//                                    classifier only emits ScalarFLOP;
+//                                    other OpKind values are forward
+//                                    declarations)
+llvm::SmallVector<Measurement, 1>
+toMeasurements(const OpClass &MirOp);
+
 } // namespace ptxai
 
 #endif // PTXAI_MEASUREMENT_H

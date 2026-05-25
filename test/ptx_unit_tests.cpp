@@ -901,6 +901,170 @@ static void test_meas_integration_cp_async() {
     }
 }
 
+// =============================================================
+// MIR-side Measurement (PR 2)
+// =============================================================
+//
+// The toMeasurements(OpClass) overload on the MIR side. Coverage:
+//   - One test per FpPrecision for the ScalarFLOP arm (5 tests)
+//   - "Already-multiplied" count preserved (lane multiplier baked in by
+//     ptxai::classify before reaching us)
+//   - Each non-ScalarFLOP OpKind → 0 measurements (forward-declared
+//     enum values that the MIR classifier doesn't yet emit)
+//   - Integration through ptxai::classify(opcodeName): the canonical
+//     LLVM 18 (bare-width) and modern (underscored) FMA opcode forms.
+// applyToBlockStats coverage and recordMemory coverage stay end-to-end
+// (FileCheck) for the same reason as in PR 1: they need MachineInstr
+// fixtures, and applyToBlockStats is going away in PR 6/7.
+
+static void test_mir_meas_flop_f16() {
+    ptxai::OpClass op;
+    op.kind = ptxai::OpKind::ScalarFLOP;
+    op.precision = ptxai::FpPrecision::F16;
+    op.flopsPerInvocation = 2;
+    auto ms = toMeasurements(op);
+    EXPECT_EQ((int)ms.size(), 1);
+    if (ms.size() == 1) {
+        EXPECT(ms[0].kind == Measurement::Kind::Flop);
+        EXPECT(ms[0].precision == ptxai::FpPrecision::F16);
+        EXPECT(ms[0].scope == ptxai::InvocationScope::PerThread);
+        EXPECT_EQ((int)ms[0].count, 2);
+    }
+}
+
+static void test_mir_meas_flop_bf16() {
+    ptxai::OpClass op;
+    op.kind = ptxai::OpKind::ScalarFLOP;
+    op.precision = ptxai::FpPrecision::BF16;
+    op.flopsPerInvocation = 1;
+    auto ms = toMeasurements(op);
+    EXPECT_EQ((int)ms.size(), 1);
+    if (ms.size() == 1) EXPECT(ms[0].precision == ptxai::FpPrecision::BF16);
+}
+
+static void test_mir_meas_flop_f32() {
+    ptxai::OpClass op;
+    op.kind = ptxai::OpKind::ScalarFLOP;
+    op.precision = ptxai::FpPrecision::F32;
+    op.flopsPerInvocation = 2;
+    auto ms = toMeasurements(op);
+    EXPECT_EQ((int)ms.size(), 1);
+    if (ms.size() == 1) EXPECT(ms[0].precision == ptxai::FpPrecision::F32);
+}
+
+static void test_mir_meas_flop_f64() {
+    ptxai::OpClass op;
+    op.kind = ptxai::OpKind::ScalarFLOP;
+    op.precision = ptxai::FpPrecision::F64;
+    op.flopsPerInvocation = 1;
+    auto ms = toMeasurements(op);
+    EXPECT_EQ((int)ms.size(), 1);
+    if (ms.size() == 1) EXPECT(ms[0].precision == ptxai::FpPrecision::F64);
+}
+
+static void test_mir_meas_flop_other() {
+    ptxai::OpClass op;
+    op.kind = ptxai::OpKind::ScalarFLOP;
+    op.precision = ptxai::FpPrecision::Other;
+    op.flopsPerInvocation = 1;
+    auto ms = toMeasurements(op);
+    EXPECT_EQ((int)ms.size(), 1);
+    if (ms.size() == 1) EXPECT(ms[0].precision == ptxai::FpPrecision::Other);
+}
+
+static void test_mir_meas_flop_lanes_already_multiplied() {
+    // The MIR-side ptxai::classify bakes the lane multiplier into
+    // flopsPerInvocation before we see it (e.g. FMA_F16x2rrr → 4 = 2·2).
+    // toMeasurements must NOT multiply again.
+    ptxai::OpClass op;
+    op.kind = ptxai::OpKind::ScalarFLOP;
+    op.precision = ptxai::FpPrecision::F16;
+    op.flopsPerInvocation = 4;
+    auto ms = toMeasurements(op);
+    EXPECT_EQ((int)ms.size(), 1);
+    if (ms.size() == 1) EXPECT_EQ((int)ms[0].count, 4);
+}
+
+static void test_mir_meas_flop_zero_count_empty() {
+    // Defensive: classify returns flopsPerInvocation=0 for non-FLOP
+    // opcodes routed through OpKind::None, but if a future arm emits
+    // ScalarFLOP with count=0 (shouldn't happen), we must not produce
+    // a phantom measurement that the aggregator would then route into
+    // Stats.Flops with no effect.
+    ptxai::OpClass op;
+    op.kind = ptxai::OpKind::ScalarFLOP;
+    op.precision = ptxai::FpPrecision::F32;
+    op.flopsPerInvocation = 0;
+    auto ms = toMeasurements(op);
+    EXPECT_EQ((int)ms.size(), 0);
+}
+
+static void test_mir_meas_none_kind_empty() {
+    // Default OpClass (kind = None) — the bulk of MIR opcodes (memory,
+    // control flow, sreg reads, integer ALU).
+    ptxai::OpClass op;
+    auto ms = toMeasurements(op);
+    EXPECT_EQ((int)ms.size(), 0);
+}
+
+static void test_mir_meas_mma_kind_empty_for_now() {
+    // OpKind::MMA is reserved but unimplemented on the MIR side; emitting
+    // 0 measurements is correct until Phase 3 wires up the shape table.
+    ptxai::OpClass op;
+    op.kind = ptxai::OpKind::MMA;
+    op.flopsPerInvocation = 4096;
+    auto ms = toMeasurements(op);
+    EXPECT_EQ((int)ms.size(), 0);
+}
+
+static void test_mir_meas_special_math_empty_for_now() {
+    ptxai::OpClass op;
+    op.kind = ptxai::OpKind::SpecialMath;
+    op.flopsPerInvocation = 1;
+    auto ms = toMeasurements(op);
+    EXPECT_EQ((int)ms.size(), 0);
+}
+
+// ----- Integration via ptxai::classify(opcodeName) -----
+
+static void test_mir_meas_integration_classify_fma_underscored() {
+    // Modern LLVM emits FMA_F32rrr; classifier marks it ScalarFLOP, F32,
+    // count=2 (FMA = 2 flops); toMeasurements emits one Flop measurement.
+    auto ms = toMeasurements(ptxai::classify("FMA_F32rrr"));
+    EXPECT_EQ((int)ms.size(), 1);
+    if (ms.size() == 1) {
+        EXPECT(ms[0].precision == ptxai::FpPrecision::F32);
+        EXPECT_EQ((int)ms[0].count, 2);
+    }
+}
+
+static void test_mir_meas_integration_classify_fma_bare_width() {
+    // LLVM 18 bare-width form (FMA32rrr / FMA64rrr). Same FLOP count;
+    // precision recovered from the digit suffix.
+    auto ms = toMeasurements(ptxai::classify("FMA64rrr"));
+    EXPECT_EQ((int)ms.size(), 1);
+    if (ms.size() == 1) {
+        EXPECT(ms[0].precision == ptxai::FpPrecision::F64);
+        EXPECT_EQ((int)ms[0].count, 2);
+    }
+}
+
+static void test_mir_meas_integration_classify_fmul_f16x2() {
+    // FMUL_F16x2rrr → 1 flop × 2 lanes = 2.
+    auto ms = toMeasurements(ptxai::classify("FMUL_F16x2rrr"));
+    EXPECT_EQ((int)ms.size(), 1);
+    if (ms.size() == 1) {
+        EXPECT(ms[0].precision == ptxai::FpPrecision::F16);
+        EXPECT_EQ((int)ms[0].count, 2);
+    }
+}
+
+static void test_mir_meas_integration_classify_non_flop() {
+    // Non-FLOP opcode → OpKind::None → 0 measurements.
+    auto ms = toMeasurements(ptxai::classify("ADD64rr"));
+    EXPECT_EQ((int)ms.size(), 0);
+}
+
 // ---------------------------------------------------------- driver
 
 struct Test { const char *name; std::function<void()> fn; };
@@ -1015,6 +1179,29 @@ int main() {
         {"meas_integration_fma_f16x2",    test_meas_integration_fma_f16x2},
         {"meas_integration_ld_global_f32",test_meas_integration_ld_global_f32},
         {"meas_integration_cp_async",     test_meas_integration_cp_async},
+        // MIR-side toMeasurements overload (PR 2)
+        {"mir_meas_flop_f16",        test_mir_meas_flop_f16},
+        {"mir_meas_flop_bf16",       test_mir_meas_flop_bf16},
+        {"mir_meas_flop_f32",        test_mir_meas_flop_f32},
+        {"mir_meas_flop_f64",        test_mir_meas_flop_f64},
+        {"mir_meas_flop_other",      test_mir_meas_flop_other},
+        {"mir_meas_flop_lanes_already_multiplied",
+                                     test_mir_meas_flop_lanes_already_multiplied},
+        {"mir_meas_flop_zero_count_empty",
+                                     test_mir_meas_flop_zero_count_empty},
+        {"mir_meas_none_kind_empty", test_mir_meas_none_kind_empty},
+        {"mir_meas_mma_kind_empty_for_now",
+                                     test_mir_meas_mma_kind_empty_for_now},
+        {"mir_meas_special_math_empty_for_now",
+                                     test_mir_meas_special_math_empty_for_now},
+        {"mir_meas_integration_classify_fma_underscored",
+                                     test_mir_meas_integration_classify_fma_underscored},
+        {"mir_meas_integration_classify_fma_bare_width",
+                                     test_mir_meas_integration_classify_fma_bare_width},
+        {"mir_meas_integration_classify_fmul_f16x2",
+                                     test_mir_meas_integration_classify_fmul_f16x2},
+        {"mir_meas_integration_classify_non_flop",
+                                     test_mir_meas_integration_classify_non_flop},
     };
 
     int passes = 0;

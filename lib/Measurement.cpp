@@ -4,6 +4,7 @@
 
 #include "llvm/Support/NVPTXAddrSpace.h"
 
+#include <cassert>
 #include <type_traits>
 #include <variant>
 
@@ -49,6 +50,26 @@ toMeasurements(const ptx::OpClass &PtxOp) {
         }
         // WarpSync / Barrier / Ignore / Unknown: 0 measurements.
     }, PtxOp);
+    return Out;
+}
+
+SmallVector<Measurement, 1>
+toMeasurements(const OpClass &MirOp) {
+    SmallVector<Measurement, 1> Out;
+    if (MirOp.kind != OpKind::ScalarFLOP || MirOp.flopsPerInvocation == 0)
+        return Out;   // MMA / SpecialMath / etc. not yet emitted by MIR
+                      // classifier; OpKind::None is the bulk of opcodes.
+    // PR-0 tripwire: any non-PerThread FLOP from MIR is a Phase-3 signal,
+    // not a silent acceptance. The PTX-side converter drops PerWarp
+    // FlopOp; the MIR side asserts because the MIR classifier doesn't
+    // currently have any code path that legitimately produces non-
+    // PerThread scope.
+    assert(MirOp.scope == InvocationScope::PerThread &&
+           "non-PerThread MIR FLOP source needs scope-aware aggregation");
+    Out.push_back({Measurement::Kind::Flop, MirOp.scope, MirOp.precision,
+                   /*addrSpace=*/0u,
+                   /*isLoad=*/false, /*isStore=*/false,
+                   MirOp.flopsPerInvocation});
     return Out;
 }
 
