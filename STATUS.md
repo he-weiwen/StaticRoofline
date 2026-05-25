@@ -100,6 +100,13 @@ runs against MIR dumped with `-stop-before=nvptx-asm-printer`.
 
 ## To do
 
+> **Architectural refactor proposed**, not implemented: see
+> `docs/measurement-refactor.md`. Splits the analyzer into classify /
+> collect / report layers with a `Measurement` value type as the
+> contract. Subsumes Phases 3-5 below into ~80-LOC incremental PRs,
+> and is the recommended substrate before adding `wmma.load/store`
+> classification (currently misclassified — same doc, §1.1).
+
 ### Phase 1 — inline-PTX parser (next)
 1. **`tools/cccl-scraper`** — walk CCCL `generated/*.h`, extract canonical
    PTX from doc comments + asm template strings, output
