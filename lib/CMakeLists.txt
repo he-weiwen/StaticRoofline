@@ -10,7 +10,8 @@ set(LLVM_OPTIONAL_SOURCES
   PTX/Tokenizer.cpp
   PTX/Parser.cpp
   PTX/Classifier.cpp
-  OpClassifier.cpp)
+  OpClassifier.cpp
+  Measurement.cpp)
 
 # OBJECT library: same source files compiled into both the plugin (.so)
 # and the standalone unit-test binary (test/ptx_unit_tests). Object form
@@ -19,7 +20,8 @@ add_library(ptxai_ptx OBJECT
   PTX/Tokenizer.cpp
   PTX/Parser.cpp
   PTX/Classifier.cpp
-  OpClassifier.cpp)
+  OpClassifier.cpp
+  Measurement.cpp)
 set_property(TARGET ptxai_ptx PROPERTY POSITION_INDEPENDENT_CODE ON)
 target_include_directories(ptxai_ptx PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 

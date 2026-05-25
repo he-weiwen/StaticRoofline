@@ -1,4 +1,5 @@
 #include "OpClassifier.h"
+#include "Measurement.h"
 #include "PTX/Classifier.h"
 #include "PTX/Parser.h"
 #include "llvm/ADT/DenseMap.h"
@@ -114,82 +115,67 @@ namespace {
         return Mem.LocalLoadBytes + Mem.LocalStoreBytes;
     }
 
+    // Route a Measurement into the existing per-thread BlockStats buckets.
+    // PR 1: preserves PR-0 behaviour byte-for-byte. Today's mapping
+    // intentionally flattens PerWarp Memory into per-thread shared/global
+    // buckets (matches the existing LdMatrix / AsyncCopy convention) and
+    // routes PerWarp Flops into FlopsOther (matches MMAOp). When per-scope
+    // buckets land in a later PR, this function grows scope-aware
+    // dispatch; the converter (toMeasurements) already emits honest
+    // scopes, so no caller-side change will be needed.
+    static void applyToBlockStats(const ptxai::Measurement &M,
+                                  BlockStats &Stats) {
+        using namespace NVPTXAS;
+        if (M.kind == ptxai::Measurement::Kind::Flop) {
+            if (M.scope != ptxai::InvocationScope::PerThread) {
+                Stats.FlopsOther += M.count;
+                return;
+            }
+            Stats.Flops += M.count;
+            switch (M.precision) {
+            case ptxai::FpPrecision::F16:   Stats.FlopsF16   += M.count; break;
+            case ptxai::FpPrecision::BF16:  Stats.FlopsBF16  += M.count; break;
+            case ptxai::FpPrecision::F32:   Stats.FlopsF32   += M.count; break;
+            case ptxai::FpPrecision::F64:   Stats.FlopsF64   += M.count; break;
+            case ptxai::FpPrecision::Other: Stats.FlopsOther += M.count; break;
+            }
+            return;
+        }
+        auto bucket = [&](uint64_t &lo, uint64_t &st) {
+            if (M.isLoad)  lo += M.count;
+            if (M.isStore) st += M.count;
+        };
+        switch (M.addrSpace) {
+        case ADDRESS_SPACE_GLOBAL:
+            bucket(Stats.Mem.GlobalLoadBytes, Stats.Mem.GlobalStoreBytes); break;
+        case ADDRESS_SPACE_SHARED:
+        case ADDRESS_SPACE_SHARED_CLUSTER:
+            bucket(Stats.Mem.SharedLoadBytes, Stats.Mem.SharedStoreBytes); break;
+        case ADDRESS_SPACE_LOCAL:
+            bucket(Stats.Mem.LocalLoadBytes,  Stats.Mem.LocalStoreBytes);  break;
+        case ADDRESS_SPACE_CONST:
+            bucket(Stats.Mem.ConstLoadBytes,  Stats.Mem.ConstStoreBytes);  break;
+        case ADDRESS_SPACE_ENTRY_PARAM:
+            bucket(Stats.Mem.ParamLoadBytes,  Stats.Mem.ParamStoreBytes);  break;
+        default:
+            Stats.Mem.UnknownBytes += M.count;
+            ++Stats.Mem.UnknownAccesses;
+            break;
+        }
+    }
+
     // Dispatch a parsed inline-PTX OpClass into the existing BlockStats
-    // counters. std::visit gives us the exhaustiveness check: adding a new
-    // arm to ptxai::ptx::OpClass forces a compile error here unless we add
-    // a handler. Today's known arms:
-    //   FlopOp / MMAOp / MemoryOp / AsyncCopy / LdMatrix
-    //   WarpSync / Barrier / Ignore / Unknown
+    // counters via the Measurement value type. Exhaustiveness check on
+    // the variant lives inside toMeasurements (see Measurement.cpp).
     static void applyInlinePtxOpClass(BlockStats &Stats,
                                       const ptxai::ptx::OpClass &PtxOp) {
-        std::visit([&](const auto &Op) {
-            using T = std::decay_t<decltype(Op)>;
-            if constexpr (std::is_same_v<T, ptxai::ptx::FlopOp>) {
-                // Currently only PerThread is wired; PerWarp will arrive
-                // with MMA. The MIR-side aggregator carries the same
-                // assertion to keep this consistent.
-                if (Op.scope != ptxai::InvocationScope::PerThread) return;
-                Stats.Flops += Op.flops;
-                switch (Op.precision) {
-                case ptxai::FpPrecision::F16:   Stats.FlopsF16   += Op.flops; break;
-                case ptxai::FpPrecision::BF16:  Stats.FlopsBF16  += Op.flops; break;
-                case ptxai::FpPrecision::F32:   Stats.FlopsF32   += Op.flops; break;
-                case ptxai::FpPrecision::F64:   Stats.FlopsF64   += Op.flops; break;
-                case ptxai::FpPrecision::Other: Stats.FlopsOther += Op.flops; break;
-                }
-            } else if constexpr (std::is_same_v<T, ptxai::ptx::MMAOp>) {
-                // PerWarp scope. Emit into a separate-scope counter once
-                // we wire warp-aware aggregation; for now log into
-                // FlopsOther so it's visible in the diagnostic without
-                // double-counting against per-thread totals.
-                Stats.FlopsOther += Op.flops;
-            } else if constexpr (std::is_same_v<T, ptxai::ptx::MemoryOp>) {
-                using namespace NVPTXAS;
-                auto bucket = [&](uint64_t &lo, uint64_t &st) {
-                    if (Op.isLoad)  lo += Op.bytes;
-                    if (Op.isStore) st += Op.bytes;
-                };
-                switch (Op.addrSpace) {
-                case ADDRESS_SPACE_GLOBAL:
-                    bucket(Stats.Mem.GlobalLoadBytes, Stats.Mem.GlobalStoreBytes);
-                    break;
-                case ADDRESS_SPACE_SHARED:
-                case ADDRESS_SPACE_SHARED_CLUSTER:
-                    bucket(Stats.Mem.SharedLoadBytes, Stats.Mem.SharedStoreBytes);
-                    break;
-                case ADDRESS_SPACE_LOCAL:
-                    bucket(Stats.Mem.LocalLoadBytes, Stats.Mem.LocalStoreBytes);
-                    break;
-                case ADDRESS_SPACE_CONST:
-                    bucket(Stats.Mem.ConstLoadBytes, Stats.Mem.ConstStoreBytes);
-                    break;
-                case ADDRESS_SPACE_ENTRY_PARAM:
-                    bucket(Stats.Mem.ParamLoadBytes, Stats.Mem.ParamStoreBytes);
-                    break;
-                default:
-                    Stats.Mem.UnknownBytes += Op.bytes;
-                    ++Stats.Mem.UnknownAccesses;
-                    break;
-                }
-            } else if constexpr (std::is_same_v<T, ptxai::ptx::AsyncCopy>) {
-                // cp.async family: shared <- global. Bytes optional (may be
-                // a runtime value). When known, attribute to both endpoints.
-                if (Op.bytes) {
-                    Stats.Mem.GlobalLoadBytes  += *Op.bytes;
-                    Stats.Mem.SharedStoreBytes += *Op.bytes;
-                }
-            } else if constexpr (std::is_same_v<T, ptxai::ptx::LdMatrix>) {
-                // Warp-cooperative shared->register transfer.
-                Stats.Mem.SharedLoadBytes += Op.bytes;
-            } else if constexpr (std::is_same_v<T, ptxai::ptx::WarpSync> ||
-                                 std::is_same_v<T, ptxai::ptx::Barrier>  ||
-                                 std::is_same_v<T, ptxai::ptx::Ignore>) {
-                // No FLOPs, no bytes by design.
-            } else if constexpr (std::is_same_v<T, ptxai::ptx::Unknown>) {
-                // Surface as unknown traffic so the diagnostic is non-zero.
-                ++Stats.Mem.UnknownAccesses;
-            }
-        }, PtxOp);
+        for (const ptxai::Measurement &M : ptxai::toMeasurements(PtxOp))
+            applyToBlockStats(M, Stats);
+        // Unknown emits no Measurement by design; preserve the diagnostic
+        // counter bump here. The "we encountered something opaque" signal
+        // is load-bearing for diff-ing against canonical opcode tables.
+        if (std::holds_alternative<ptxai::ptx::Unknown>(PtxOp))
+            ++Stats.Mem.UnknownAccesses;
     }
 
     static void addFlops(BlockStats &Stats, const ptxai::OpClass &Op) {

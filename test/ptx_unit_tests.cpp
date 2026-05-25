@@ -608,6 +608,299 @@ static void test_mem_neg_unrelated()    {
     EXPECT(!parseMemoryOpcodeName("INT_PTX_SREG_TID_x").has_value());
 }
 
+// =============================================================
+// Measurement + toMeasurements (PR 1)
+// =============================================================
+//
+// Coverage rationale (see docs/measurement-refactor.md §6.3):
+//   - One test per variant arm of ptx::OpClass (12 arms / cases)
+//   - All five FpPrecision values for the Flop arm
+//   - All five named address spaces for the Memory arm
+//   - The two "metadata-shaped" cases that distinguish Measurement from
+//     the variant: AsyncCopy{bytes unset} → empty; LdMatrix scope
+//     preserved as PerWarp.
+//   - The lane-multiplier case (FMA on packed fp16x2 → count = 4).
+//   - End-to-end integration through parse + classify + toMeasurements
+//     for three canonical asm strings.
+// applyToBlockStats coverage is intentionally deferred — it's tested
+// end-to-end by the FileCheck suite (all 8 green tests verify exact
+// output text), and will be deleted in PR 6/7. Direct unit tests would
+// require exposing BlockStats publicly, which we're not going to do
+// since the struct is going away.
+
+#include "Measurement.h"
+
+using ptxai::Measurement;
+using ptxai::toMeasurements;
+
+// ----- Measurement struct sanity -----
+
+static void test_meas_default_init() {
+    Measurement m{Measurement::Kind::Flop};
+    EXPECT(m.kind == Measurement::Kind::Flop);
+    EXPECT(m.scope == ptxai::InvocationScope::PerThread);
+    EXPECT(m.precision == ptxai::FpPrecision::Other);
+    EXPECT_EQ((int)m.addrSpace, 0);
+    EXPECT(!m.isLoad);
+    EXPECT(!m.isStore);
+    EXPECT_EQ((int)m.count, 0);
+}
+
+static void test_meas_size_within_budget() {
+    // Guards against accidental field bloat. Design target = 24 bytes.
+    EXPECT(sizeof(Measurement) <= 24);
+}
+
+// ----- toMeasurements: FlopOp arm × precision -----
+
+static void test_meas_flop_per_thread_f16() {
+    auto ms = toMeasurements(ptxai::ptx::OpClass{
+        ptxai::ptx::FlopOp{ptxai::FpPrecision::F16, 4,
+                            ptxai::InvocationScope::PerThread}});
+    EXPECT_EQ((int)ms.size(), 1);
+    if (ms.size() == 1) {
+        EXPECT(ms[0].kind == Measurement::Kind::Flop);
+        EXPECT(ms[0].precision == ptxai::FpPrecision::F16);
+        EXPECT(ms[0].scope == ptxai::InvocationScope::PerThread);
+        EXPECT_EQ((int)ms[0].count, 4);
+    }
+}
+
+static void test_meas_flop_per_thread_bf16() {
+    auto ms = toMeasurements(ptxai::ptx::OpClass{
+        ptxai::ptx::FlopOp{ptxai::FpPrecision::BF16, 2,
+                            ptxai::InvocationScope::PerThread}});
+    EXPECT_EQ((int)ms.size(), 1);
+    if (ms.size() == 1) EXPECT(ms[0].precision == ptxai::FpPrecision::BF16);
+}
+
+static void test_meas_flop_per_thread_f32() {
+    auto ms = toMeasurements(ptxai::ptx::OpClass{
+        ptxai::ptx::FlopOp{ptxai::FpPrecision::F32, 2,
+                            ptxai::InvocationScope::PerThread}});
+    EXPECT_EQ((int)ms.size(), 1);
+    if (ms.size() == 1) EXPECT(ms[0].precision == ptxai::FpPrecision::F32);
+}
+
+static void test_meas_flop_per_thread_f64() {
+    auto ms = toMeasurements(ptxai::ptx::OpClass{
+        ptxai::ptx::FlopOp{ptxai::FpPrecision::F64, 1,
+                            ptxai::InvocationScope::PerThread}});
+    EXPECT_EQ((int)ms.size(), 1);
+    if (ms.size() == 1) EXPECT(ms[0].precision == ptxai::FpPrecision::F64);
+}
+
+static void test_meas_flop_per_thread_other() {
+    auto ms = toMeasurements(ptxai::ptx::OpClass{
+        ptxai::ptx::FlopOp{ptxai::FpPrecision::Other, 1,
+                            ptxai::InvocationScope::PerThread}});
+    EXPECT_EQ((int)ms.size(), 1);
+    if (ms.size() == 1) EXPECT(ms[0].precision == ptxai::FpPrecision::Other);
+}
+
+static void test_meas_flop_per_warp_dropped() {
+    // Preserves PR-0 behaviour: PerWarp FlopOp is dropped at the converter
+    // (no current producer emits one; the MIR-side aggregator asserts).
+    auto ms = toMeasurements(ptxai::ptx::OpClass{
+        ptxai::ptx::FlopOp{ptxai::FpPrecision::F32, 2,
+                            ptxai::InvocationScope::PerWarp}});
+    EXPECT_EQ((int)ms.size(), 0);
+}
+
+// ----- toMeasurements: MMAOp -----
+
+static void test_meas_mma_per_warp_flop() {
+    ptxai::ptx::MMAOp m;
+    m.M = 16; m.N = 8; m.K = 16;
+    m.flops = 2u * 16 * 8 * 16;
+    m.scope = ptxai::InvocationScope::PerWarp;
+    auto ms = toMeasurements(ptxai::ptx::OpClass{m});
+    EXPECT_EQ((int)ms.size(), 1);
+    if (ms.size() == 1) {
+        EXPECT(ms[0].kind == Measurement::Kind::Flop);
+        EXPECT(ms[0].scope == ptxai::InvocationScope::PerWarp);
+        EXPECT(ms[0].precision == ptxai::FpPrecision::Other);
+        EXPECT_EQ((int)ms[0].count, 2 * 16 * 8 * 16);
+    }
+}
+
+// ----- toMeasurements: MemoryOp × addrSpace × direction -----
+
+static void test_meas_memop_global_load() {
+    ptxai::ptx::MemoryOp mem;
+    mem.addrSpace = 1; mem.bytes = 4; mem.isLoad = true;
+    auto ms = toMeasurements(ptxai::ptx::OpClass{mem});
+    EXPECT_EQ((int)ms.size(), 1);
+    if (ms.size() == 1) {
+        EXPECT(ms[0].kind == Measurement::Kind::Memory);
+        EXPECT_EQ((int)ms[0].addrSpace, 1);
+        EXPECT(ms[0].isLoad && !ms[0].isStore);
+        EXPECT_EQ((int)ms[0].count, 4);
+    }
+}
+
+static void test_meas_memop_global_store() {
+    ptxai::ptx::MemoryOp mem;
+    mem.addrSpace = 1; mem.bytes = 4; mem.isStore = true;
+    auto ms = toMeasurements(ptxai::ptx::OpClass{mem});
+    EXPECT_EQ((int)ms.size(), 1);
+    if (ms.size() == 1) EXPECT(!ms[0].isLoad && ms[0].isStore);
+}
+
+static void test_meas_memop_shared_load() {
+    ptxai::ptx::MemoryOp mem;
+    mem.addrSpace = 3; mem.bytes = 16; mem.isLoad = true;
+    auto ms = toMeasurements(ptxai::ptx::OpClass{mem});
+    EXPECT_EQ((int)ms.size(), 1);
+    if (ms.size() == 1) {
+        EXPECT_EQ((int)ms[0].addrSpace, 3);
+        EXPECT_EQ((int)ms[0].count, 16);
+    }
+}
+
+static void test_meas_memop_atomic_rmw() {
+    // Atomics produce a single measurement with both flags set.
+    ptxai::ptx::MemoryOp mem;
+    mem.addrSpace = 1; mem.bytes = 4;
+    mem.isLoad = true; mem.isStore = true;
+    auto ms = toMeasurements(ptxai::ptx::OpClass{mem});
+    EXPECT_EQ((int)ms.size(), 1);
+    if (ms.size() == 1) EXPECT(ms[0].isLoad && ms[0].isStore);
+}
+
+static void test_meas_memop_local() {
+    ptxai::ptx::MemoryOp mem;
+    mem.addrSpace = 5; mem.bytes = 8; mem.isLoad = true;
+    auto ms = toMeasurements(ptxai::ptx::OpClass{mem});
+    EXPECT_EQ((int)ms.size(), 1);
+    if (ms.size() == 1) EXPECT_EQ((int)ms[0].addrSpace, 5);
+}
+
+static void test_meas_memop_const() {
+    ptxai::ptx::MemoryOp mem;
+    mem.addrSpace = 4; mem.bytes = 4; mem.isLoad = true;
+    auto ms = toMeasurements(ptxai::ptx::OpClass{mem});
+    EXPECT_EQ((int)ms.size(), 1);
+    if (ms.size() == 1) EXPECT_EQ((int)ms[0].addrSpace, 4);
+}
+
+static void test_meas_memop_param() {
+    ptxai::ptx::MemoryOp mem;
+    mem.addrSpace = 101; mem.bytes = 8; mem.isLoad = true;
+    auto ms = toMeasurements(ptxai::ptx::OpClass{mem});
+    EXPECT_EQ((int)ms.size(), 1);
+    if (ms.size() == 1) EXPECT_EQ((int)ms[0].addrSpace, 101);
+}
+
+// ----- toMeasurements: AsyncCopy -----
+
+static void test_meas_async_copy_known_bytes() {
+    // cp.async with literal byte count: 2 measurements (global load +
+    // shared store), each carrying the same byte count.
+    ptxai::ptx::AsyncCopy ac;
+    ac.dstAddrSpace = 3; ac.srcAddrSpace = 1; ac.bytes = 16;
+    auto ms = toMeasurements(ptxai::ptx::OpClass{ac});
+    EXPECT_EQ((int)ms.size(), 2);
+    if (ms.size() == 2) {
+        EXPECT(ms[0].kind == Measurement::Kind::Memory);
+        EXPECT_EQ((int)ms[0].addrSpace, 1);   // AS_GLOBAL
+        EXPECT(ms[0].isLoad && !ms[0].isStore);
+        EXPECT_EQ((int)ms[0].count, 16);
+        EXPECT_EQ((int)ms[1].addrSpace, 3);   // AS_SHARED
+        EXPECT(!ms[1].isLoad && ms[1].isStore);
+        EXPECT_EQ((int)ms[1].count, 16);
+    }
+}
+
+static void test_meas_async_copy_unknown_bytes() {
+    // cp.async with runtime byte count (operand 2 is a register, not an
+    // immediate). bytes is nullopt → zero measurements.
+    ptxai::ptx::AsyncCopy ac;
+    ac.dstAddrSpace = 3; ac.srcAddrSpace = 1;
+    auto ms = toMeasurements(ptxai::ptx::OpClass{ac});
+    EXPECT_EQ((int)ms.size(), 0);
+}
+
+// ----- toMeasurements: LdMatrix -----
+
+static void test_meas_ldmatrix_per_warp_shared_load() {
+    ptxai::ptx::LdMatrix lm;
+    lm.addrSpace = 3; lm.bytes = 512;
+    lm.scope = ptxai::InvocationScope::PerWarp;
+    auto ms = toMeasurements(ptxai::ptx::OpClass{lm});
+    EXPECT_EQ((int)ms.size(), 1);
+    if (ms.size() == 1) {
+        EXPECT(ms[0].kind == Measurement::Kind::Memory);
+        EXPECT(ms[0].scope == ptxai::InvocationScope::PerWarp);
+        EXPECT_EQ((int)ms[0].addrSpace, 3);
+        EXPECT(ms[0].isLoad);
+        EXPECT_EQ((int)ms[0].count, 512);
+    }
+}
+
+// ----- toMeasurements: zero-measurement arms -----
+
+static void test_meas_warpsync_empty() {
+    auto ms = toMeasurements(ptxai::ptx::OpClass{ptxai::ptx::WarpSync{}});
+    EXPECT_EQ((int)ms.size(), 0);
+}
+
+static void test_meas_barrier_empty() {
+    auto ms = toMeasurements(ptxai::ptx::OpClass{ptxai::ptx::Barrier{}});
+    EXPECT_EQ((int)ms.size(), 0);
+}
+
+static void test_meas_ignore_empty() {
+    auto ms = toMeasurements(ptxai::ptx::OpClass{ptxai::ptx::Ignore{}});
+    EXPECT_EQ((int)ms.size(), 0);
+}
+
+static void test_meas_unknown_empty() {
+    // Unknown emits no Measurement; the diagnostic UnknownAccesses bump
+    // lives at the call site (the pass shim), not in the converter.
+    auto ms = toMeasurements(ptxai::ptx::OpClass{
+        ptxai::ptx::Unknown{llvm::StringRef("foo")}});
+    EXPECT_EQ((int)ms.size(), 0);
+}
+
+// ----- Integration via parse + classify -----
+
+static llvm::SmallVector<Measurement, 2> classifyAndConvert(llvm::StringRef src) {
+    auto stmts = parse(src);
+    if (stmts.empty()) return {};
+    return toMeasurements(classify(stmts[0]));
+}
+
+static void test_meas_integration_fma_f16x2() {
+    auto ms = classifyAndConvert("fma.rn.f16x2 %0,%1,%2,%3;");
+    EXPECT_EQ((int)ms.size(), 1);
+    if (ms.size() == 1) {
+        EXPECT(ms[0].kind == Measurement::Kind::Flop);
+        EXPECT(ms[0].precision == ptxai::FpPrecision::F16);
+        EXPECT_EQ((int)ms[0].count, 4);     // 2 (FMA) × 2 (lane)
+    }
+}
+
+static void test_meas_integration_ld_global_f32() {
+    auto ms = classifyAndConvert("ld.global.f32 %0, [%1];");
+    EXPECT_EQ((int)ms.size(), 1);
+    if (ms.size() == 1) {
+        EXPECT(ms[0].kind == Measurement::Kind::Memory);
+        EXPECT_EQ((int)ms[0].addrSpace, 1);
+        EXPECT(ms[0].isLoad && !ms[0].isStore);
+        EXPECT_EQ((int)ms[0].count, 4);
+    }
+}
+
+static void test_meas_integration_cp_async() {
+    auto ms = classifyAndConvert("cp.async.cg.shared.global [%0], [%1], 16;");
+    EXPECT_EQ((int)ms.size(), 2);
+    if (ms.size() == 2) {
+        EXPECT(ms[0].isLoad  && ms[0].count == 16 && ms[0].addrSpace == 1);
+        EXPECT(ms[1].isStore && ms[1].count == 16 && ms[1].addrSpace == 3);
+    }
+}
+
 // ---------------------------------------------------------- driver
 
 struct Test { const char *name; std::function<void()> fn; };
@@ -695,6 +988,33 @@ int main() {
         {"mem_neg_plain_ld",         test_mem_neg_plain_ld},
         {"mem_neg_just_ldv",         test_mem_neg_just_ldv},
         {"mem_neg_unrelated",        test_mem_neg_unrelated},
+        // Measurement + toMeasurements (PR 1)
+        {"meas_default_init",        test_meas_default_init},
+        {"meas_size_within_budget",  test_meas_size_within_budget},
+        {"meas_flop_per_thread_f16", test_meas_flop_per_thread_f16},
+        {"meas_flop_per_thread_bf16",test_meas_flop_per_thread_bf16},
+        {"meas_flop_per_thread_f32", test_meas_flop_per_thread_f32},
+        {"meas_flop_per_thread_f64", test_meas_flop_per_thread_f64},
+        {"meas_flop_per_thread_other", test_meas_flop_per_thread_other},
+        {"meas_flop_per_warp_dropped", test_meas_flop_per_warp_dropped},
+        {"meas_mma_per_warp_flop",   test_meas_mma_per_warp_flop},
+        {"meas_memop_global_load",   test_meas_memop_global_load},
+        {"meas_memop_global_store",  test_meas_memop_global_store},
+        {"meas_memop_shared_load",   test_meas_memop_shared_load},
+        {"meas_memop_atomic_rmw",    test_meas_memop_atomic_rmw},
+        {"meas_memop_local",         test_meas_memop_local},
+        {"meas_memop_const",         test_meas_memop_const},
+        {"meas_memop_param",         test_meas_memop_param},
+        {"meas_async_copy_known_bytes",   test_meas_async_copy_known_bytes},
+        {"meas_async_copy_unknown_bytes", test_meas_async_copy_unknown_bytes},
+        {"meas_ldmatrix_per_warp_shared_load", test_meas_ldmatrix_per_warp_shared_load},
+        {"meas_warpsync_empty",      test_meas_warpsync_empty},
+        {"meas_barrier_empty",       test_meas_barrier_empty},
+        {"meas_ignore_empty",        test_meas_ignore_empty},
+        {"meas_unknown_empty",       test_meas_unknown_empty},
+        {"meas_integration_fma_f16x2",    test_meas_integration_fma_f16x2},
+        {"meas_integration_ld_global_f32",test_meas_integration_ld_global_f32},
+        {"meas_integration_cp_async",     test_meas_integration_cp_async},
     };
 
     int passes = 0;
