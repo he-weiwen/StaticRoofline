@@ -104,11 +104,28 @@ add_custom_target(test-ptx-unit
   COMMENT "Running PTX tokenizer/parser/classifier unit tests"
   USES_TERMINAL)
 
+# Stats query helper (PR 3). Separate binary so the Stats API surface can
+# be validated independently of any production consumer (which lands in
+# PR 4+).
+add_executable(stats_unit_tests
+  stats_unit_tests.cpp
+  $<TARGET_OBJECTS:ptxai_ptx>)
+target_include_directories(stats_unit_tests PRIVATE
+  ${CMAKE_SOURCE_DIR}/lib
+  ${LLVM_INCLUDE_DIRS})
+target_link_libraries(stats_unit_tests PRIVATE ${_unit_test_libs})
+
+add_custom_target(test-stats-unit
+  COMMAND $<TARGET_FILE:stats_unit_tests>
+  DEPENDS stats_unit_tests
+  COMMENT "Running Stats query-helper unit tests"
+  USES_TERMINAL)
+
 add_custom_target(check
   DEPENDS test-smoke test-fsub test-add_f64 test-local test-fma
           test-fma_v2half test-matmul_loops test-matmul_tiled_loops
           test-inline_asm_hfma2 test-ldg_restrict
-          test-ptx-unit
+          test-ptx-unit test-stats-unit
   COMMENT "Running all ptx-ai tests")
 
 # Backward-compat alias for the previous target name.
