@@ -1,5 +1,6 @@
 #include "OpClassifier.h"
 #include "Measurement.h"
+#include "Stats.h"
 #include "PTX/Classifier.h"
 #include "PTX/Parser.h"
 #include "llvm/ADT/DenseMap.h"
@@ -115,7 +116,10 @@ namespace {
         return Mem.LocalLoadBytes + Mem.LocalStoreBytes;
     }
 
-    // Route a Measurement into the existing per-thread BlockStats buckets.
+    // Route a Measurement into the existing per-thread BlockStats buckets,
+    // and append it to the per-BB Measurement stream (PR 4) so the Stats
+    // query helper can verify parity in debug builds.
+    //
     // PR 1: preserves PR-0 behaviour byte-for-byte. Today's mapping
     // intentionally flattens PerWarp Memory into per-thread shared/global
     // buckets (matches the existing LdMatrix / AsyncCopy convention) and
@@ -124,8 +128,10 @@ namespace {
     // dispatch; the converter (toMeasurements) already emits honest
     // scopes, so no caller-side change will be needed.
     static void applyToBlockStats(const ptxai::Measurement &M,
-                                  BlockStats &Stats) {
+                                  BlockStats &Stats,
+                                  SmallVectorImpl<ptxai::Measurement> &Ms) {
         using namespace NVPTXAS;
+        Ms.push_back(M);
         if (M.kind == ptxai::Measurement::Kind::Flop) {
             if (M.scope != ptxai::InvocationScope::PerThread) {
                 Stats.FlopsOther += M.count;
@@ -168,9 +174,10 @@ namespace {
     // counters via the Measurement value type. Exhaustiveness check on
     // the variant lives inside toMeasurements (see Measurement.cpp).
     static void applyInlinePtxOpClass(BlockStats &Stats,
+                                      SmallVectorImpl<ptxai::Measurement> &Ms,
                                       const ptxai::ptx::OpClass &PtxOp) {
         for (const ptxai::Measurement &M : ptxai::toMeasurements(PtxOp))
-            applyToBlockStats(M, Stats);
+            applyToBlockStats(M, Stats, Ms);
         // Unknown emits no Measurement by design; preserve the diagnostic
         // counter bump here. The "we encountered something opaque" signal
         // is load-bearing for diff-ing against canonical opcode tables.
@@ -204,7 +211,9 @@ namespace {
         return M;
     }
 
-    static void recordMemory(BlockStats &Stats, const MachineInstr &MI,
+    static void recordMemory(BlockStats &Stats,
+                             SmallVectorImpl<ptxai::Measurement> &Ms,
+                             const MachineInstr &MI,
                              const TargetInstrInfo &TII) {
         bool sawAnyMMO = false;
         for (MachineMemOperand *MMO : MI.memoperands()) {
@@ -222,7 +231,7 @@ namespace {
                 continue;
             }
             if (auto M = measurementFromMMO(*MMO, MI.mayLoad(), MI.mayStore()))
-                applyToBlockStats(*M, Stats);
+                applyToBlockStats(*M, Stats, Ms);
         }
 
         // Opcode-name-driven fallback for loads/stores that lack MMOs.
@@ -242,9 +251,89 @@ namespace {
                                ptxai::InvocationScope::PerThread,
                                ptxai::FpPrecision::Other,
                                info->addrSpace, info->isLoad, info->isStore,
-                               info->bytes}, Stats);
+                               info->bytes}, Stats, Ms);
         }
     }
+
+    // PR 4: debug-only parity check between the BlockStats fields and the
+    // Stats view over the per-BB Measurement stream. The pass populates
+    // both data paths from the same applyToBlockStats call site; this
+    // function asserts they didn't diverge. It is the safety net for the
+    // PR 5-7 migration sequence: any future refactor that breaks the
+    // equivalence trips here on every kernel.
+    //
+    // BlockStats → Stats correspondence:
+    //   .Flops      = flops({scope: PerThread})
+    //   .FlopsF16   = flops({precision: F16,  scope: PerThread})
+    //   .FlopsBF16  = flops({precision: BF16, scope: PerThread})
+    //   .FlopsF32   = flops({precision: F32,  scope: PerThread})
+    //   .FlopsF64   = flops({precision: F64,  scope: PerThread})
+    //   .FlopsOther = flops({precision: Other, scope: PerThread})
+    //               + flops({scope: PerWarp})
+    //               + flops({scope: PerCTA})       — double duty; the
+    //                 PerWarp / PerCTA terms come from the MMAOp routing
+    //                 in applyToBlockStats. The PerCTA term is defensive;
+    //                 nothing emits it today.
+    //   .{AS}LoadBytes  = bytes({addrSpace: AS, isLoad: true})
+    //   .{AS}StoreBytes = bytes({addrSpace: AS, isStore: true})
+    //                     — note: the load/store filters individually
+    //                     include atomics (which set both flags), matching
+    //                     applyToBlockStats which also bumps both sides
+    //                     for atomic measurements.
+    //   .SharedLoadBytes / .SharedStoreBytes
+    //                   = bytes({SHARED, ...}) + bytes({SHARED_CLUSTER, ...})
+    //                     — the BlockStats bucket collapses the two
+    //                     address-space variants; the Measurement preserves
+    //                     them.
+    //
+    // UnknownBytes / UnknownAccesses are deliberately NOT asserted because
+    // the diagnostic bumps (size-unknown MMO, mayLoad/mayStore both false,
+    // opaque PTX) inflate BlockStats without producing Measurements. A
+    // lower-bound check would be possible but adds noise for little gain.
+#ifndef NDEBUG
+    static void verifyMeasurementParity(
+            const BlockStats &BS, ArrayRef<ptxai::Measurement> Ms) {
+        using namespace NVPTXAS;
+        ptxai::Stats sv(Ms);
+        auto flopsAt = [&](ptxai::FpPrecision p) {
+            ptxai::Filter f;
+            f.precision = p;
+            f.scope = ptxai::InvocationScope::PerThread;
+            return sv.flops(f);
+        };
+        ptxai::Filter pt; pt.scope = ptxai::InvocationScope::PerThread;
+        ptxai::Filter pw; pw.scope = ptxai::InvocationScope::PerWarp;
+        ptxai::Filter pc; pc.scope = ptxai::InvocationScope::PerCTA;
+
+        assert(BS.Flops      == sv.flops(pt)                       && "BS.Flops divergence");
+        assert(BS.FlopsF16   == flopsAt(ptxai::FpPrecision::F16)   && "BS.FlopsF16 divergence");
+        assert(BS.FlopsBF16  == flopsAt(ptxai::FpPrecision::BF16)  && "BS.FlopsBF16 divergence");
+        assert(BS.FlopsF32   == flopsAt(ptxai::FpPrecision::F32)   && "BS.FlopsF32 divergence");
+        assert(BS.FlopsF64   == flopsAt(ptxai::FpPrecision::F64)   && "BS.FlopsF64 divergence");
+        assert(BS.FlopsOther ==
+                   flopsAt(ptxai::FpPrecision::Other)
+                 + sv.flops(pw) + sv.flops(pc)                       && "BS.FlopsOther divergence");
+
+        auto bytesAt = [&](unsigned as, bool load) {
+            ptxai::Filter f;
+            f.addrSpace = as;
+            if (load) f.isLoad = true; else f.isStore = true;
+            return sv.bytes(f);
+        };
+        assert(BS.Mem.GlobalLoadBytes  == bytesAt(ADDRESS_SPACE_GLOBAL,      true)  && "GlobalLoadBytes divergence");
+        assert(BS.Mem.GlobalStoreBytes == bytesAt(ADDRESS_SPACE_GLOBAL,      false) && "GlobalStoreBytes divergence");
+        assert(BS.Mem.SharedLoadBytes  == bytesAt(ADDRESS_SPACE_SHARED,      true)
+                                       + bytesAt(ADDRESS_SPACE_SHARED_CLUSTER, true)  && "SharedLoadBytes divergence");
+        assert(BS.Mem.SharedStoreBytes == bytesAt(ADDRESS_SPACE_SHARED,      false)
+                                       + bytesAt(ADDRESS_SPACE_SHARED_CLUSTER, false) && "SharedStoreBytes divergence");
+        assert(BS.Mem.LocalLoadBytes   == bytesAt(ADDRESS_SPACE_LOCAL,       true)  && "LocalLoadBytes divergence");
+        assert(BS.Mem.LocalStoreBytes  == bytesAt(ADDRESS_SPACE_LOCAL,       false) && "LocalStoreBytes divergence");
+        assert(BS.Mem.ConstLoadBytes   == bytesAt(ADDRESS_SPACE_CONST,       true)  && "ConstLoadBytes divergence");
+        assert(BS.Mem.ConstStoreBytes  == bytesAt(ADDRESS_SPACE_CONST,       false) && "ConstStoreBytes divergence");
+        assert(BS.Mem.ParamLoadBytes   == bytesAt(ADDRESS_SPACE_ENTRY_PARAM, true)  && "ParamLoadBytes divergence");
+        assert(BS.Mem.ParamStoreBytes  == bytesAt(ADDRESS_SPACE_ENTRY_PARAM, false) && "ParamStoreBytes divergence");
+    }
+#endif
 
     static void printMemoryStats(const MemStats &Mem) {
         errs() << "    memory:"
@@ -365,6 +454,12 @@ namespace {
             for (auto &MBB : MF) {
                 ++Blocks;
                 BlockStats Stats;
+                // PR 4: parallel Measurement stream. Populated by
+                // applyToBlockStats alongside its BlockStats field
+                // bumps; consumed by verifyMeasurementParity below
+                // (debug-only). Per-BB scope: the small-size buffer
+                // keeps short BBs stack-allocated.
+                SmallVector<ptxai::Measurement, 32> Ms;
 
                 for (auto &MI : MBB) {
                     if (MI.isDebugInstr())
@@ -382,24 +477,27 @@ namespace {
                         if (Asm && *Asm) {
                             for (const ptxai::ptx::Stmt &S :
                                  ptxai::ptx::parse(StringRef(Asm))) {
-                                applyInlinePtxOpClass(Stats,
+                                applyInlinePtxOpClass(Stats, Ms,
                                                        ptxai::ptx::classify(S));
                             }
                         }
                         // Still record any MMOs LLVM attached to the
                         // INLINEASM (rare but possible on some atomic
                         // intrinsics).
-                        recordMemory(Stats, MI, *TII);
+                        recordMemory(Stats, Ms, MI, *TII);
                         continue;
                     }
 
                     ptxai::OpClass Op =
                         ptxai::classify(TII->getName(MI.getOpcode()));
                     for (const ptxai::Measurement &M : ptxai::toMeasurements(Op))
-                        applyToBlockStats(M, Stats);
-                    recordMemory(Stats, MI, *TII);
+                        applyToBlockStats(M, Stats, Ms);
+                    recordMemory(Stats, Ms, MI, *TII);
                 }
 
+#ifndef NDEBUG
+                verifyMeasurementParity(Stats, Ms);
+#endif
                 printBlockStats(MBB, Stats, *TII, MLI);
                 Total += Stats;
             }
