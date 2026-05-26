@@ -17,11 +17,13 @@
 #include "Stats.h"
 
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
+#include <string>
 #include <vector>
 
 using namespace ptxai;
@@ -429,6 +431,85 @@ static void test_stats_measurement_size_within_budget() {
 }
 
 // =============================================================
+// printFlopsAndBytes (PR 5)
+// =============================================================
+//
+// The exact byte-string the per-BB and kernel-summary lines emit. The
+// integration FileCheck tests already verify the format end-to-end on
+// real kernels; these unit tests pin down the per-edge-case shapes
+// (empty, ai=n/a, PerWarp→flops_other routing) that FileCheck only
+// sparsely exercises.
+
+static std::string capturePrint(uint64_t instrs,
+                                llvm::ArrayRef<Measurement> ms) {
+    std::string buf;
+    llvm::raw_string_ostream os(buf);
+    printFlopsAndBytes(os, instrs, Stats(ms));
+    os.flush();
+    return buf;
+}
+
+static void test_print_flops_empty() {
+    std::string out = capturePrint(0, {});
+    EXPECT(out == " instrs=0 flops=0 flops_f16=0 flops_bf16=0 flops_f32=0"
+                  " flops_f64=0 flops_other=0 global_bytes=0 local_bytes=0"
+                  " ai=n/a");
+}
+
+static void test_print_flops_single_precision() {
+    // Worked example matching the smoke.ll FileCheck fixture: 1 fadd
+    // f32 plus three 4-byte global loads/stores = 12 bytes; AI = 1/12.
+    // The unit test uses simplified counts; the exact text matters.
+    std::vector<Measurement> v = {
+        flop(FpPrecision::F16, 4),
+        memLoad(AS_GLOBAL, 4),
+        memLoad(AS_GLOBAL, 4),
+        memLoad(AS_GLOBAL, 4),
+        memStore(AS_GLOBAL, 4),
+    };
+    std::string out = capturePrint(5, v);
+    EXPECT(out == " instrs=5 flops=4 flops_f16=4 flops_bf16=0 flops_f32=0"
+                  " flops_f64=0 flops_other=0 global_bytes=16 local_bytes=0"
+                  " ai=0.250000");
+}
+
+static void test_print_flops_mixed_precision() {
+    std::vector<Measurement> v = {
+        flop(FpPrecision::F16, 4),
+        flop(FpPrecision::F32, 2),
+        flop(FpPrecision::F64, 1),
+        memLoad(AS_GLOBAL, 100),
+    };
+    std::string out = capturePrint(4, v);
+    // Per-thread total = 7; each precision broken out; ai = 7/100 = 0.07
+    EXPECT(out == " instrs=4 flops=7 flops_f16=4 flops_bf16=0 flops_f32=2"
+                  " flops_f64=1 flops_other=0 global_bytes=100 local_bytes=0"
+                  " ai=0.070000");
+}
+
+static void test_print_flops_per_warp_routes_to_other() {
+    // PerWarp Flop (e.g. from MMA) → flops_other only; flops stays 0
+    // because the per-thread total query excludes PerWarp.
+    // ai = 0 because flops (the per-thread numerator) is 0.
+    std::vector<Measurement> v = {
+        flop(FpPrecision::F16, 4096, InvocationScope::PerWarp),
+        memLoad(AS_GLOBAL, 512),
+    };
+    std::string out = capturePrint(2, v);
+    EXPECT(out == " instrs=2 flops=0 flops_f16=0 flops_bf16=0 flops_f32=0"
+                  " flops_f64=0 flops_other=4096 global_bytes=512 local_bytes=0"
+                  " ai=0.000000");
+}
+
+static void test_print_flops_ai_zero_bytes() {
+    std::vector<Measurement> v = {flop(FpPrecision::F32, 10)};
+    std::string out = capturePrint(1, v);
+    EXPECT(out == " instrs=1 flops=10 flops_f16=0 flops_bf16=0 flops_f32=10"
+                  " flops_f64=0 flops_other=0 global_bytes=0 local_bytes=0"
+                  " ai=n/a");
+}
+
+// =============================================================
 // Driver
 // =============================================================
 
@@ -469,6 +550,12 @@ int main() {
         {"stats_is_a_view",                        test_stats_is_a_view},
         // hardening
         {"stats_measurement_size_within_budget",   test_stats_measurement_size_within_budget},
+        // printFlopsAndBytes (PR 5)
+        {"print_flops_empty",                      test_print_flops_empty},
+        {"print_flops_single_precision",           test_print_flops_single_precision},
+        {"print_flops_mixed_precision",            test_print_flops_mixed_precision},
+        {"print_flops_per_warp_routes_to_other",   test_print_flops_per_warp_routes_to_other},
+        {"print_flops_ai_zero_bytes",              test_print_flops_ai_zero_bytes},
     };
 
     int passes = 0;

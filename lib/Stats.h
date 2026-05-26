@@ -19,6 +19,7 @@
 #include "Measurement.h"
 
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <cstdint>
 #include <optional>
@@ -69,6 +70,25 @@ public:
 private:
     llvm::ArrayRef<Measurement> Ms;
 };
+
+// Print the one-line "instrs=N flops=N ... ai=X" summary derived from
+// a Measurement stream. Used by the pass for both per-BB and kernel-
+// summary output; the format is the same.
+//
+// Format (single line, leading space):
+//   " instrs=N flops=N flops_f16=N flops_bf16=N flops_f32=N flops_f64=N"
+//   " flops_other=N global_bytes=N local_bytes=N ai=X"
+//
+// Caller writes any preceding text (e.g. "bb.0.entry loop_depth=…") and
+// a trailing newline. AI uses global bytes only as the denominator;
+// "n/a" is emitted when global bytes == 0. local_bytes is a diagnostic
+// field, NOT folded into AI.
+//
+// Lives in Stats.{h,cpp} for now — it's a thin Stats consumer that
+// fits with the query API. PR 8 will move it into a Reporter class
+// once a second output format (JSON) needs the same data path.
+void printFlopsAndBytes(llvm::raw_ostream &OS, uint64_t Instrs,
+                        const Stats &S);
 
 } // namespace ptxai
 

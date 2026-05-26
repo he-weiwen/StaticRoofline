@@ -108,14 +108,6 @@ namespace {
         return LHS;
     }
 
-    static uint64_t getGlobalBytes(const MemStats &Mem) {
-        return Mem.GlobalLoadBytes + Mem.GlobalStoreBytes;
-    }
-
-    static uint64_t getLocalBytes(const MemStats &Mem) {
-        return Mem.LocalLoadBytes + Mem.LocalStoreBytes;
-    }
-
     // Route a Measurement into the existing per-thread BlockStats buckets,
     // and append it to the per-BB Measurement stream (PR 4) so the Stats
     // query helper can verify parity in debug builds.
@@ -183,15 +175,6 @@ namespace {
         // is load-bearing for diff-ing against canonical opcode tables.
         if (std::holds_alternative<ptxai::ptx::Unknown>(PtxOp))
             ++Stats.Mem.UnknownAccesses;
-    }
-
-    static void printDensity(uint64_t FLOPs, uint64_t Bytes) {
-        if (Bytes == 0) {
-            errs() << "n/a";
-            return;
-        }
-        double Density = static_cast<double>(FLOPs) / static_cast<double>(Bytes);
-        errs() << format("%.6f", Density);
     }
 
     // Build the Measurement that represents one MMO's byte traffic, or
@@ -351,25 +334,6 @@ namespace {
                << " unknown_accesses=" << Mem.UnknownAccesses << "\n";
     }
 
-    static void printFlopsAndBytes(const BlockStats &Stats) {
-        // AI denominator is global bytes only — matches conventional roofline.
-        // local_bytes is reported as a diagnostic; it's nonzero in spilling /
-        // un-promoted-alloca cases and worth flagging, but folding it into AI
-        // hides the global-memory signal in the common case where local=0.
-        uint64_t GlobalBytes = getGlobalBytes(Stats.Mem);
-        errs() << " instrs=" << Stats.Instrs
-               << " flops=" << Stats.Flops
-               << " flops_f16=" << Stats.FlopsF16
-               << " flops_bf16=" << Stats.FlopsBF16
-               << " flops_f32=" << Stats.FlopsF32
-               << " flops_f64=" << Stats.FlopsF64
-               << " flops_other=" << Stats.FlopsOther
-               << " global_bytes=" << GlobalBytes
-               << " local_bytes=" << getLocalBytes(Stats.Mem)
-               << " ai=";
-        printDensity(Stats.Flops, GlobalBytes);
-    }
-
     static BasicBlockExecutionCount
     getExecutionCountForBlock(const MachineBasicBlock &MBB,
                               const MachineLoopInfo &MLI) {
@@ -403,6 +367,7 @@ namespace {
 
     static void printBlockStats(const MachineBasicBlock &MBB,
                                 const BlockStats &Stats,
+                                ArrayRef<ptxai::Measurement> Ms,
                                 const TargetInstrInfo &TII,
                                 const MachineLoopInfo &MLI) {
         errs() << "  bb." << MBB.getNumber();
@@ -413,7 +378,7 @@ namespace {
         BasicBlockExecutionCount Count = getExecutionCountForBlock(MBB, MLI);
         errs() << " loop_depth=" << Count.getLoopDepth() << " exec_count=";
         printExecutionCount(errs(), Count);
-        printFlopsAndBytes(Stats);
+        ptxai::printFlopsAndBytes(errs(), Stats.Instrs, ptxai::Stats(Ms));
         errs() << "\n";
 
         SmallVector<std::pair<unsigned, uint64_t>, 32> Opcodes;
@@ -445,6 +410,11 @@ namespace {
         bool runOnMachineFunction(MachineFunction &MF) override {
             uint64_t Blocks = 0;
             BlockStats Total;
+            // PR 5: kernel-wide Measurement accumulation for the summary
+            // call to printFlopsAndBytes. Per-BB Ms vectors append into
+            // this; the summary then constructs a Stats view over the
+            // full kernel.
+            SmallVector<ptxai::Measurement, 0> TotalMs;
             const TargetInstrInfo *TII = MF.getSubtarget().getInstrInfo();
             const MachineLoopInfo &MLI =
                 getAnalysis<MachineLoopInfoWrapperPass>().getLI();
@@ -498,13 +468,14 @@ namespace {
 #ifndef NDEBUG
                 verifyMeasurementParity(Stats, Ms);
 #endif
-                printBlockStats(MBB, Stats, *TII, MLI);
+                printBlockStats(MBB, Stats, Ms, *TII, MLI);
                 Total += Stats;
+                TotalMs.append(Ms.begin(), Ms.end());
             }
 
             errs() << "summary: " << MF.getName()
                    << " blocks=" << Blocks;
-            printFlopsAndBytes(Total);
+            ptxai::printFlopsAndBytes(errs(), Total.Instrs, ptxai::Stats(TotalMs));
             errs() << "\n";
 
             return false;
