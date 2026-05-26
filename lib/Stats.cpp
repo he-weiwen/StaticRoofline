@@ -124,4 +124,38 @@ void printFlopsAndBytes(llvm::raw_ostream &OS, uint64_t Instrs,
     }
 }
 
+void printMemoryStats(llvm::raw_ostream &OS, const Stats &S,
+                      uint64_t UnknownBytes, uint64_t UnknownAccesses) {
+    using namespace llvm;
+    using namespace NVPTXAS;
+
+    auto bytesAt = [&](unsigned as, bool load) {
+        Filter f;
+        f.addrSpace = as;
+        if (load) f.isLoad = true; else f.isStore = true;
+        return S.bytes(f);
+    };
+    // SHARED and SHARED_CLUSTER collapse into shared_* in the current
+    // output format (matches BlockStats's pre-refactor accounting).
+    auto sharedAt = [&](bool load) {
+        return bytesAt(ADDRESS_SPACE_SHARED, load)
+             + bytesAt(ADDRESS_SPACE_SHARED_CLUSTER, load);
+    };
+
+    OS << "    memory:"
+       << " global_load="  << bytesAt(ADDRESS_SPACE_GLOBAL,      true)
+       << " global_store=" << bytesAt(ADDRESS_SPACE_GLOBAL,      false)
+       << " shared_load="  << sharedAt(true)
+       << " shared_store=" << sharedAt(false)
+       << " local_load="   << bytesAt(ADDRESS_SPACE_LOCAL,       true)
+       << " local_store="  << bytesAt(ADDRESS_SPACE_LOCAL,       false)
+       << " const_load="   << bytesAt(ADDRESS_SPACE_CONST,       true)
+       << " const_store="  << bytesAt(ADDRESS_SPACE_CONST,       false)
+       << " param_load="   << bytesAt(ADDRESS_SPACE_ENTRY_PARAM, true)
+       << " param_store="  << bytesAt(ADDRESS_SPACE_ENTRY_PARAM, false)
+       << " unknown_bytes="    << UnknownBytes
+       << " unknown_accesses=" << UnknownAccesses
+       << "\n";
+}
+
 } // namespace ptxai

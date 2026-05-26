@@ -318,22 +318,6 @@ namespace {
     }
 #endif
 
-    static void printMemoryStats(const MemStats &Mem) {
-        errs() << "    memory:"
-               << " global_load=" << Mem.GlobalLoadBytes
-               << " global_store=" << Mem.GlobalStoreBytes
-               << " shared_load=" << Mem.SharedLoadBytes
-               << " shared_store=" << Mem.SharedStoreBytes
-               << " local_load=" << Mem.LocalLoadBytes
-               << " local_store=" << Mem.LocalStoreBytes
-               << " const_load=" << Mem.ConstLoadBytes
-               << " const_store=" << Mem.ConstStoreBytes
-               << " param_load=" << Mem.ParamLoadBytes
-               << " param_store=" << Mem.ParamStoreBytes
-               << " unknown_bytes=" << Mem.UnknownBytes
-               << " unknown_accesses=" << Mem.UnknownAccesses << "\n";
-    }
-
     static BasicBlockExecutionCount
     getExecutionCountForBlock(const MachineBasicBlock &MBB,
                               const MachineLoopInfo &MLI) {
@@ -392,7 +376,9 @@ namespace {
         for (const auto &[Opcode, Count] : Opcodes)
             errs() << "    " << TII.getName(Opcode) << ": " << Count << "\n";
 
-        printMemoryStats(Stats.Mem);
+        ptxai::printMemoryStats(errs(), ptxai::Stats(Ms),
+                                Stats.Mem.UnknownBytes,
+                                Stats.Mem.UnknownAccesses);
     }
 
     struct NVPTXArithIntensityPass : public MachineFunctionPass {

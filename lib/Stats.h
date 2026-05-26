@@ -90,6 +90,26 @@ private:
 void printFlopsAndBytes(llvm::raw_ostream &OS, uint64_t Instrs,
                         const Stats &S);
 
+// Print the per-direction, per-address-space memory line:
+//   "    memory: global_load=N global_store=N shared_load=N shared_store=N"
+//   " local_load=N local_store=N const_load=N const_store=N param_load=N"
+//   " param_store=N unknown_bytes=N unknown_accesses=N\n"
+//
+// The per-AS / per-direction fields come from Stats queries. The two
+// "unknown_*" trailing fields are passed in separately: they're
+// diagnostic bumps fired by paths that don't produce a Measurement
+// (size-unknown MMO; mayLoad/mayStore both false; opaque PTX). PR 4's
+// parity assertion deliberately excludes these for the same reason.
+//
+// SHARED and SHARED_CLUSTER are summed into the shared_* fields (the
+// existing BlockStats accounting collapses them; the Measurement stream
+// preserves them honestly so future per-cluster queries are possible).
+//
+// Trailing newline IS emitted (unlike printFlopsAndBytes, which leaves
+// newline placement to the caller — historical asymmetry preserved).
+void printMemoryStats(llvm::raw_ostream &OS, const Stats &S,
+                      uint64_t UnknownBytes, uint64_t UnknownAccesses);
+
 } // namespace ptxai
 
 #endif // PTXAI_STATS_H

@@ -510,6 +510,92 @@ static void test_print_flops_ai_zero_bytes() {
 }
 
 // =============================================================
+// printMemoryStats (PR 6)
+// =============================================================
+
+static std::string capturePrintMem(uint64_t unknownBytes,
+                                    uint64_t unknownAccesses,
+                                    llvm::ArrayRef<Measurement> ms) {
+    std::string buf;
+    llvm::raw_string_ostream os(buf);
+    printMemoryStats(os, Stats(ms), unknownBytes, unknownAccesses);
+    os.flush();
+    return buf;
+}
+
+static void test_print_mem_empty() {
+    std::string out = capturePrintMem(0, 0, {});
+    EXPECT(out == "    memory: global_load=0 global_store=0 shared_load=0"
+                  " shared_store=0 local_load=0 local_store=0 const_load=0"
+                  " const_store=0 param_load=0 param_store=0 unknown_bytes=0"
+                  " unknown_accesses=0\n");
+}
+
+static void test_print_mem_global_only() {
+    // Smoke-kernel shape: 2 global loads (8B) + 1 global store (4B).
+    std::vector<Measurement> v = {
+        memLoad(AS_GLOBAL, 4),
+        memLoad(AS_GLOBAL, 4),
+        memStore(AS_GLOBAL, 4),
+    };
+    std::string out = capturePrintMem(0, 0, v);
+    EXPECT(out == "    memory: global_load=8 global_store=4 shared_load=0"
+                  " shared_store=0 local_load=0 local_store=0 const_load=0"
+                  " const_store=0 param_load=0 param_store=0 unknown_bytes=0"
+                  " unknown_accesses=0\n");
+}
+
+static void test_print_mem_shared_load_store_distinct() {
+    // Verifies load and store filters route independently for the same
+    // address space — catches any future regression where Stats.bytes
+    // accidentally conflates the two.
+    std::vector<Measurement> v = {
+        memLoad (AS_SHARED, 16),
+        memStore(AS_SHARED, 32),
+    };
+    std::string out = capturePrintMem(0, 0, v);
+    EXPECT(out == "    memory: global_load=0 global_store=0 shared_load=16"
+                  " shared_store=32 local_load=0 local_store=0 const_load=0"
+                  " const_store=0 param_load=0 param_store=0 unknown_bytes=0"
+                  " unknown_accesses=0\n");
+}
+
+static void test_print_mem_shared_cluster_aliasing() {
+    // AS_SHARED (3) and AS_SHARED_CLUSTER (... distinct value in NVPTX
+    // ABI, see Classifier.cpp) BOTH route into the shared_* output
+    // fields. Future per-cluster queries can use Stats.bytes with the
+    // specific AS, but the printer collapses them per the existing
+    // BlockStats convention.
+    constexpr unsigned AS_SHARED_CLUSTER = 7;  // matches NVPTXAS
+    Measurement clusterLoad{Measurement::Kind::Memory};
+    clusterLoad.addrSpace = AS_SHARED_CLUSTER;
+    clusterLoad.isLoad = true;
+    clusterLoad.count = 64;
+    std::vector<Measurement> v = {
+        memLoad(AS_SHARED, 16),
+        clusterLoad,
+    };
+    std::string out = capturePrintMem(0, 0, v);
+    // shared_load = 16 (AS_SHARED) + 64 (AS_SHARED_CLUSTER) = 80
+    EXPECT(out == "    memory: global_load=0 global_store=0 shared_load=80"
+                  " shared_store=0 local_load=0 local_store=0 const_load=0"
+                  " const_store=0 param_load=0 param_store=0 unknown_bytes=0"
+                  " unknown_accesses=0\n");
+}
+
+static void test_print_mem_unknown_bytes_and_accesses() {
+    // Diagnostic counters are pure pass-through — they exist for paths
+    // that don't produce a Measurement (size-unknown MMO; mayLoad/
+    // mayStore both false; opaque PTX). Verify they appear verbatim.
+    std::string out = capturePrintMem(/*unknownBytes=*/128,
+                                       /*unknownAccesses=*/5, {});
+    EXPECT(out == "    memory: global_load=0 global_store=0 shared_load=0"
+                  " shared_store=0 local_load=0 local_store=0 const_load=0"
+                  " const_store=0 param_load=0 param_store=0 unknown_bytes=128"
+                  " unknown_accesses=5\n");
+}
+
+// =============================================================
 // Driver
 // =============================================================
 
@@ -556,6 +642,12 @@ int main() {
         {"print_flops_mixed_precision",            test_print_flops_mixed_precision},
         {"print_flops_per_warp_routes_to_other",   test_print_flops_per_warp_routes_to_other},
         {"print_flops_ai_zero_bytes",              test_print_flops_ai_zero_bytes},
+        // printMemoryStats (PR 6)
+        {"print_mem_empty",                        test_print_mem_empty},
+        {"print_mem_global_only",                  test_print_mem_global_only},
+        {"print_mem_shared_load_store_distinct",   test_print_mem_shared_load_store_distinct},
+        {"print_mem_shared_cluster_aliasing",      test_print_mem_shared_cluster_aliasing},
+        {"print_mem_unknown_bytes_and_accesses",   test_print_mem_unknown_bytes_and_accesses},
     };
 
     int passes = 0;
