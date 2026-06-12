@@ -8,8 +8,9 @@
 #
 # "xfail" = expected failure, the term LLVM lit (XFAIL:) and pytest use.
 #
-# PR 01 commits the schema; the S1 entry and the first min_coverage
-# entries land with the fixture corpus in PR 02.
+# PR 01 commits the schema; the Phase 1 scenario entries (S1, S6-S9)
+# and the first min_coverage entries land with the fixture corpus in
+# PR 02.
 #
 # Scenario schema:
 #

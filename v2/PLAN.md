@@ -8,7 +8,8 @@ parity before v1 retires into maintenance mode.
 The plan has two phases. **Phase 1 (PRs 01–13)** builds the minimal
 *genuinely useful* analyzer: `ptxroof analyze` on nvcc PTX, producing a
 loop tree with per-iteration flops/bytes/AI, honest named unknowns, and
-a compute-vs-memory verdict — scenario S1 end to end. **Phase 2** is a
+a compute-vs-memory verdict — the five Phase 1 acceptance
+scenarios of §4, headlined by S1. **Phase 2** is a
 demand-driven backlog: every other capability, each held until a real
 occasion triggers it, never built speculatively. The source tree
 contains only what Phase 1 needs; extensibility lives in the
@@ -222,10 +223,10 @@ committed inputs, compare against committed expected outputs. Two forms:
 
 **T3 — acceptance scenarios.** Tracked in
 `tests/acceptance/status.toml` with status `xfail` ("expected failure",
-the LLVM lit / pytest term) or `pass`. S1 is committed in PR 02 as an
-executable spec; S2–S5 (designed in §4) are committed with the Phase 2
-items that implement them — a scenario def lands when its work starts,
-not before. The runner enforces both directions: an `xfail` test that
+the LLVM lit / pytest term) or `pass`. The Phase 1 scenarios (S1, S6–S9) are committed in PR 02 as an
+executable spec; S2–S5 (§4) are committed with the Phase 2 items that
+implement them — a scenario def lands when its work starts, not
+before. The runner enforces both directions: an `xfail` test that
 passes is an error (forces the status change), a `pass` test that fails
 blocks the PR. Development progress *is* the sequence of xfail→pass
 status changes in that file.
@@ -305,22 +306,38 @@ instruction. Each check registers as its analysis lands (PR 08, 09,
 
 ## 4. Acceptance scenarios
 
-S1 is Phase 1's goal. S2–S5 are fully designed (and their key claims
-verified against real fixtures) but land with their Phase 2 items —
-the rows stay here as the spec they'll be built to.
+Each scenario is a user question turned into an executable spec.
 
-| ID | Scenario | Fixtures | Key assertions | Lands |
-|----|----------|----------|----------------|-------|
-| S1 | Blocktiling design verification | `k5` (= `test/5_2d_blocktiling.cuh`) sm_80 PTX | nested loop tree w/ source lines; trips `K/8`; unroll detected; per-iter flops/bytes; AI(global)=32.0; per-arch knee verdicts (sm_80 compute-bound, sm_86 memory-bound) | PR 13 (Phase 1) |
-| S2 | Spill regression diff | `k12` PTX + two SASS builds of the *same* PTX: default vs `ptxas --maxrregcount=32` (real spills, not hand-edited) | static columns identical; SASS column: reg + spill-bytes delta; per-loop attribution of `STL`/`LDL` | Phase 2: `diff` + SASS |
-| S3 | Precision/pipe audit | `k2` (= `test/2_coalesced.cuh`) sm_80 PTX | pipe table: f32 cuda-core only, 0 f16; `cvt` overhead counted; load A uniform/broadcast, load B coalesced @ 2 B width w/ transaction note | Phase 2: coalescing |
-| S4 | Black-box Triton kernel | Triton 3.5.1 matmul w/ one strided operand (generator script committed), no-`.loc` hand-edited variant | parses; structural loop naming without `.loc`; trips honestly `unknown`; strided access flagged with stride expr | Phase 2: coalescing + Triton |
-| S5 | CI check / toolchain regression | `k14` (= `test/14_ldmatrix_mma.cuh`) sm_90 PTX + hand-edited copy with `mma.sync` removed + `rules.toml` | original passes; the edited copy fails exit-code 1 with message naming loop + `tensor_flops_per_iter: got 0` | Phase 2: `check` |
+**Phase 1 — `analyze` only; all five committed (xfail) in PR 02; all
+fixtures are already in the Phase 1 corpus.** S6–S9 flip together at
+PR 12 (the signal that the report is real); S1 closes Phase 1 at
+PR 13 by adding the verdicts.
+
+| ID | User question | Fixtures | Key assertions | Lands |
+|----|---------------|----------|----------------|-------|
+| S1 | Is this kernel's design point what I computed on paper? | `k5` (= `test/5_2d_blocktiling.cuh`) sm_80 PTX | nested loop tree w/ source lines; trips `K/8`; unroll detected; per-iter flops/bytes; AI(global)=32.0; per-arch knee verdicts (sm_80 compute-bound, sm_86 memory-bound) | PR 13 |
+| S6 | Where does the work go? | `k2` | loops ranked by symbolic weight: main loop `K`-dependent, remainder `K mod 4`, epilogue constant; headline names the main loop's source line; unroll main+remainder pair linked as one logical loop (the bet-2 ranking claim, tested) | PR 12 |
+| S7 | Did tiling pay off? | `k1` + `k5` | two independent runs, no `diff` verb: AI(k1 inner) = 0.25 flop/B vs AI(k5 inner) = 32 flop/B, both shape-independent (no `--bind`) — the contrast is two comparable numbers | PR 12 |
+| S8 | Am I on the precision path I think? | `k2` | flop table: f32 cuda-core only, **0 f16 flops** despite `__half` data (compute is converted to f32); 8 `cvt` per main-loop iteration counted as non-flop overhead; 2 B loads ×8/iter; one 2 B store in the epilogue | PR 12 |
+| S9 | Does the tool admit what it can't see? | `micro/data-dep`, `micro/branchy`, `micro/no-loc` | data-dependent latch → trips = *named* unknown with reason, totals stay symbolic (never silent zero), trip-coverage stat visibly < 100%; in-loop conditional → `≤` markers propagate to every aggregate; no `.loc` → loops named by label, report complete; exit 0 in all three (unknowns are results, not errors) | PR 12 |
+
+**Phase 2 — each lands with, and is the acceptance test of, its
+backlog item; "matters when" is that item's trigger.** Fully designed,
+key claims verified against real fixtures; defs are committed only
+when the work starts.
+
+| ID | User question | Fixtures | Key assertions | Matters when → lands with |
+|----|---------------|----------|----------------|---------------------------|
+| S2 | Did this build regress spills? | `k12` PTX + two SASS builds of the *same* PTX: default vs `ptxas --maxrregcount=32` (real spills, not hand-edited) | static columns identical; SASS column: reg + spill-bytes delta; per-loop attribution of `STL`/`LDL` | first spill-regression hunt → `diff` + SASS sidecar |
+| S3 | Are my global accesses coalesced? | `k2` sm_80 PTX | load A uniform/broadcast, load B coalesced @ 2 B width w/ transaction note (the precision/pipe assertions this row once carried moved to Phase 1's S8) | first uncoalesced-access suspicion → affine + coalescing |
+| S4 | Can it handle a black-box Triton kernel? | Triton 3.5.1 matmul w/ one strided operand (generator script committed), no-`.loc` hand-edited variant | parses; structural loop naming without `.loc`; trips honestly `unknown`; strided access flagged with stride expr | first non-nvcc kernel → Triton producers + coalescing |
+| S5 | Can CI gate a kernel property? | `k14` (= `test/14_ldmatrix_mma.cuh`) sm_90 PTX + hand-edited copy with `mma.sync` removed + `rules.toml` | original passes; the edited copy fails exit-code 1 with message naming loop + `tensor_flops_per_iter: got 0` | first CI gate on a kernel → `check` verb |
 
 Table values are design intent; expected outputs are authored from
-fixture reality at PR 02. Verified against real nvcc 13.2 output so far: k2's
-K-loop is unrolled ×4 with a `.pragma "nounroll"` remainder loop, so S3
-sees main-loop trips `(K − K mod 4)/4` (4 `fma` + 8 `cvt` + 8 loads per
+fixture reality when each scenario's def is committed (PR 02 for all
+of Phase 1's). Verified against real nvcc 13.2 output so far: k2's
+K-loop is unrolled ×4 with a `.pragma "nounroll"` remainder loop, so
+S6 and S8 see main-loop trips `(K − K mod 4)/4` (4 `fma` + 8 `cvt` + 8 loads per
 iteration) plus a remainder loop trips `K mod 4` — not a single
 trips-K loop. S3's access-pattern claims were hand-verified in the
 emitted PTX: A's address derives from `2·(K·row)` (lane-invariant
@@ -378,9 +395,9 @@ a scenario's status changes from xfail to pass.
 
 ### Phase 1 — the minimal useful analyzer (PRs 01–13)
 
-Goal: S1 end to end — `ptxroof analyze` on nvcc PTX produces a named
-loop tree with per-iteration flops/bytes/AI, honest named unknowns, and
-per-arch roofline verdicts. Every PR is on the critical path; nothing
+Goal: the five Phase 1 acceptance scenarios (§4) — `ptxroof analyze`
+on nvcc PTX producing a named loop tree with per-iteration
+flops/bytes/AI, honest named unknowns, and per-arch roofline verdicts. Every PR is on the critical path; nothing
 outside this list is built until Phase 1 ships.
 
 #### Foundations
@@ -404,21 +421,22 @@ outside this list is built until Phase 1 ships.
   python3 ≥ 3.11 (stdlib `tomllib` reads `status.toml` — the runner has
   zero third-party deps) — no CUDA, no LLVM, no C++ toolchain.
 
-**PR 02 — nvcc fixture corpus + S1 spec.** (scripts ~100 LOC + fixtures)
+**PR 02 — nvcc fixture corpus + Phase 1 scenario specs.** (scripts ~100 LOC + fixtures)
 - Contents (language-neutral): `regen.sh` per fixture with provenance
   headers and explicit template-instantiation wrapper `.cu` files;
   committed sm_80 PTX for `k1`, `k2`, `k5` (nvcc 13.2 `-ptx
   -lineinfo`); hand-written micro fixtures (`micro/` — single-loop,
-  branchy, irreducible, no-loc); `tools/fetch-manuals.sh` (PTX ISA
+  branchy, irreducible, no-loc, data-dep); `tools/fetch-manuals.sh` (PTX ISA
   manual into untracked `refs/` — the grammar reference PRs 03–04
-  transcribe against); the S1 acceptance def, `xfail` in `status.toml`,
-  plus the classification and trip-count min_coverage entries
-  (unenforced until PR 08/11).
+  transcribe against); the five Phase 1 acceptance defs (S1, S6–S9 —
+  §4), all `xfail` in `status.toml`, plus the classification and
+  trip-count min_coverage entries (unenforced until PR 08/11).
 - Tests: fixture lint (a runner check): every fixture has a provenance
-  header + regen.sh; the status file loads; S1 runnable-and-xfailing
-  against the stub.
+  header + regen.sh; the status file loads; all five Phase 1 scenarios
+  runnable-and-xfailing against the stub.
 - Done when: corpus committed, regen reproducible (`regen.sh` rerun is
-  a no-op diff modulo date), S1 visible as xfail in the runner output.
+  a no-op diff modulo date), S1 + S6–S9 visible as xfail in the
+  runner output.
 
 #### Frontend
 
@@ -598,7 +616,7 @@ of `lib/PTX/Classifier.cpp`)
 - Done when: ladder trip counts match the committed expected outputs;
   every unknown carries a reason string.
 
-**PR 12 — `analyze` report.** (~350 LOC)
+**PR 12 — `analyze` report. ★ S6–S9 → pass.** (~350 LOC)
 - Contents: loop-tree report (text + JSON via `Serialize` on the result
   tree): per-loop per-iteration steady-state aggregation (Measurement
   counts × enclosing trip exprs, `≤`-rendering for `at_most` counts,
@@ -612,13 +630,16 @@ of `lib/PTX/Classifier.cpp`)
   by the runner's minimum-coverage thresholds); `--bind name=value` /
   `--bind idx:name=value` for numeric columns, bindings echoed in the
   report header.
-- Tests: T2 expected outputs for `k2`, `k5` (symbolic and `--bind
-  K=4096` numeric columns); k5 unrolled-inner-loop line-aggregation
-  test; T1 for bind parsing; binding-echo CHECK line; the remaining
-  verifier checks register (Σ per-block = kernel; per-loop × bound
-  trips = flat count); S1 partially satisfied but stays xfail (needs
-  verdicts).
-- Done when: `k5` report shows the S1 numbers except roofline verdicts.
+- Tests: T2 expected outputs for `k1`, `k2`, `k5` (symbolic and
+  `--bind K=4096` numeric columns); k5 unrolled-inner-loop
+  line-aggregation test; T1 for bind parsing; binding-echo CHECK line;
+  the remaining verifier checks register (Σ per-block = kernel;
+  per-loop × bound trips = flat count); **S6–S9's statuses change to
+  pass** — loop ranking on k2 (S6), the k1-vs-k5 AI contrast (S7), the
+  k2 precision/cvt audit (S8), the three micro honesty cases (S9); S1
+  partially satisfied but stays xfail (needs verdicts).
+- Done when: S6–S9 green; `k5` report shows the S1 numbers except
+  roofline verdicts.
 
 #### Machine model
 
@@ -640,8 +661,9 @@ of `lib/PTX/Classifier.cpp`)
   flatten-by-32× error class pinned at the unit level); T2: the S1
   expected output incl. the two-arch verdict pair (sm_80 compute-bound /
   sm_86 memory-bound at AI=32) — **S1's status changes to pass**.
-- Done when: S1 green; a newcomer can go from `git clone` to the `k5`
-  report using only the README. **Phase 1 ends here.**
+- Done when: S1 green — all five Phase 1 scenarios now `pass` in
+  status.toml; a newcomer can go from `git clone` to the `k5` report
+  using only the README. **Phase 1 ends here.**
 
 ### Phase 2 — the demand-driven backlog
 
@@ -824,7 +846,7 @@ they extend; no backlog item blocks another.
 
 Phase 1:
 - [x] PR 01 — scaffold + harness (cargo, clap `analyze` stub, CLI test runner)
-- [ ] PR 02 — nvcc fixture corpus (k1/k2/k5 + micro) + S1 spec
+- [ ] PR 02 — nvcc fixture corpus (k1/k2/k5 + micro) + scenario specs S1, S6–S9
 - [ ] PR 03 — lexer
 - [ ] PR 04 — parser/AST
 - [ ] PR 05 — CFG
@@ -834,7 +856,7 @@ Phase 1:
 - [ ] PR 09 — Measurement + Stats
 - [ ] PR 10 — SymExpr
 - [ ] PR 11 — trip counts (nvcc shapes)
-- [ ] PR 12 — `analyze` report
+- [ ] PR 12 — `analyze` report ★S6 ★S7 ★S8 ★S9
 - [ ] PR 13 — machine model + verdicts + README ★S1 — **Phase 1 done**
 
 Phase 2 (backlog — tick when triggered and executed):

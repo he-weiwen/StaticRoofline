@@ -1,0 +1,3 @@
+# Cargo build artifacts. Cargo.lock IS committed (this repo builds a
+# binary; the lock makes every build use identical dependency versions).
+/target
