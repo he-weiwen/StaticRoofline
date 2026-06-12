@@ -12,6 +12,7 @@ pub mod classify;
 pub mod core;
 pub mod parse;
 pub mod report;
+pub mod trips;
 
 /// Tool version, baked in from Cargo.toml at compile time.
 pub fn version() -> &'static str {

@@ -89,6 +89,13 @@ impl SymExpr {
         if konst != 0 || terms.is_empty() {
             terms.push(SymExpr::Const(konst));
         }
+        // Canonical order: positive terms first, negated terms last
+        // (stable), so differences print as `a - b`, never `-(b) + a`.
+        terms.sort_by_key(|t| match t {
+            SymExpr::Const(c) => *c < 0,
+            SymExpr::Prod(fs) => matches!(fs.first(), Some(SymExpr::Const(c)) if *c < 0),
+            _ => false,
+        });
         if terms.len() == 1 {
             terms.pop().expect("len checked")
         } else {
@@ -101,6 +108,20 @@ impl SymExpr {
     }
 
     pub fn mul(a: SymExpr, b: SymExpr) -> SymExpr {
+        // Distribute a constant over a sum: keeps sums in the canonical
+        // "positive terms first" form (so −1·(m − K) becomes K − m, not
+        // an opaque negated sum) and is bounded — one factor is scalar.
+        match (a, b) {
+            (SymExpr::Const(c), SymExpr::Sum(ts)) | (SymExpr::Sum(ts), SymExpr::Const(c)) => ts
+                .into_iter()
+                .map(|t| SymExpr::mul(SymExpr::Const(c), t))
+                .reduce(SymExpr::add)
+                .expect("Sum invariant: nonempty"),
+            (a2, b2) => Self::mul_flat(a2, b2),
+        }
+    }
+
+    fn mul_flat(a: SymExpr, b: SymExpr) -> SymExpr {
         let mut factors = Vec::new();
         let mut konst = 1i64;
         let mut overflowed = Vec::new();
@@ -411,9 +432,12 @@ mod tests {
         );
         // A bare negated product renders without the "-1 *" noise.
         assert_eq!(E::sub(E::Const(0), k()).to_string(), "-param_2");
-        // A sum whose FIRST term is negative parenthesizes it.
+        // Term ordering is canonical: positives first.
         let lead_neg = E::add(E::mul(E::Const(-1), k()), E::sym("n"));
-        assert_eq!(lead_neg.to_string(), "-(param_2) + n");
+        assert_eq!(lead_neg.to_string(), "n - param_2");
+        // An all-negative sum parenthesizes its leading term.
+        let all_neg = E::mul(E::Const(-1), E::add(k(), E::sym("n")));
+        assert_eq!(all_neg.to_string(), "-(param_2) - n");
         // ...and a negative leading constant in a sum.
         let neg_const = E::add(E::Const(-5), E::sym("n"));
         assert_eq!(neg_const.to_string(), "n - 5");
@@ -427,10 +451,12 @@ mod tests {
 
     #[test]
     fn printing_is_deterministic_and_stable() {
+        // A constant times a sum distributes (canonical form)...
         let e1 = E::mul(E::add(k(), E::Const(1)), E::Const(3));
-        let e2 = E::mul(E::add(k(), E::Const(1)), E::Const(3));
-        assert_eq!(e1.to_string(), e2.to_string());
-        assert_eq!(e1.to_string(), "3 * (param_2 + 1)");
+        assert_eq!(e1.to_string(), "3 * param_2 + 3");
+        // ...a symbolic product over a sum does not, and parenthesizes.
+        let e2 = E::mul(E::sym("n"), E::add(k(), E::Const(1)));
+        assert_eq!(e2.to_string(), "n * (param_2 + 1)");
     }
 
     #[test]
