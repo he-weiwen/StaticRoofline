@@ -1,0 +1,11 @@
+# NVIDIA T4 (TU104) — the canonical datacenter sm_75 part.
+# Source: NVIDIA T4 Tensor Core GPU datasheet, 2019: FP32 8.1 TFLOPS,
+# FP16 16.2 TFLOPS (non-tensor); GDDR6 300 GB/s. FP64 is 1/32 rate.
+name = "Tesla T4"
+arch = "sm_75"
+dram_bw_gbps = 300.0
+
+[peak_tflops]
+f16 = 16.2
+f32 = 8.1
+f64 = 0.25

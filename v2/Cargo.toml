@@ -20,6 +20,7 @@ cpp_demangle = "0.4"  # kernel names; fallible -> plain names pass through
 serde = { version = "1", features = ["derive"] }  # the result tree derives Serialize
 serde_json = "1"      # --json IS that derivation
 thiserror = "2"       # library error types
+toml = "0.9"          # machine tables (data/machine/*.toml)
 
 [dev-dependencies]
 insta = "1"           # unit-level snapshots (AST dumps, loop trees)

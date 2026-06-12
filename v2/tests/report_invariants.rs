@@ -13,7 +13,7 @@ use ptxroof::cfg::{build_cfg, loop_forest, loop_names};
 use ptxroof::classify::Precision;
 use ptxroof::core::Stmt;
 use ptxroof::parse::parser::parse;
-use ptxroof::report::{BindingSpec, Stats, analyze, collect};
+use ptxroof::report::{AnalyzeOptions, BindingSpec, Stats, analyze, collect};
 use ptxroof::trips::trip_counts;
 use std::collections::HashMap;
 use std::fs;
@@ -95,12 +95,15 @@ fn bound_flop_totals_agree_with_an_independent_evaluation() {
         let value = 4099; // deliberately not a multiple of the unrolls
 
         // Path 1: the report.
-        let binds = [BindingSpec {
-            index: Some(param),
-            name: "N".into(),
-            value,
-        }];
-        let report = analyze(&src, fixture, &binds).expect("analyzes");
+        let opts = AnalyzeOptions {
+            bindings: vec![BindingSpec {
+                index: Some(param),
+                name: "N".into(),
+                value,
+            }],
+            ..Default::default()
+        };
+        let report = analyze(&src, fixture, &opts).expect("analyzes");
         let reported: i64 = report.kernels[0].totals.flops["total"]
             .expr
             .parse()

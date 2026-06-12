@@ -1,0 +1,13 @@
+# NVIDIA H100 SXM5 (GH100) — the canonical sm_90 part.
+# Source: NVIDIA H100 Tensor Core GPU datasheet / Hopper whitepaper,
+# 2022 (SXM5 variant): FP64 33.5 TFLOPS, FP32 66.9 TFLOPS, FP16/BF16
+# 133.8 TFLOPS (cuda cores, non-tensor); HBM3 3350 GB/s.
+name = "H100-SXM5"
+arch = "sm_90"
+dram_bw_gbps = 3350.0
+
+[peak_tflops]
+f16 = 133.8
+bf16 = 133.8
+f32 = 66.9
+f64 = 33.5

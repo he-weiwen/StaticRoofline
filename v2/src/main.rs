@@ -40,6 +40,14 @@ enum Command {
         /// `name=value` or `idx:name=value` (params are positional)
         #[arg(long)]
         bind: Vec<String>,
+        /// Architecture(s) for roofline verdicts (repeatable);
+        /// defaults to the module's .target directive
+        #[arg(long)]
+        arch: Vec<String>,
+        /// Launch block dimensions `x,y,z` for per-CTA totals;
+        /// defaults to .reqntid/.maxntid when the kernel carries one
+        #[arg(long)]
+        launch: Option<String>,
         /// Print the parsed module in canonical PTX form and exit
         #[arg(long)]
         dump_ast: bool,
@@ -62,6 +70,8 @@ fn run() -> anyhow::Result<ExitCode> {
         input,
         json,
         bind,
+        arch,
+        launch,
         dump_ast,
     } = cli.command;
     let source =
@@ -74,12 +84,21 @@ fn run() -> anyhow::Result<ExitCode> {
         return Ok(ExitCode::SUCCESS);
     }
 
-    let binds = bind
+    let bindings = bind
         .iter()
         .map(|b| ptxroof::report::parse_bind(b))
         .collect::<Result<Vec<_>, _>>()
         .map_err(anyhow::Error::msg)?;
-    let report = ptxroof::report::analyze(&source, &input.display().to_string(), &binds)
+    let launch = launch
+        .map(|s| parse_launch(&s))
+        .transpose()
+        .map_err(anyhow::Error::msg)?;
+    let opts = ptxroof::report::AnalyzeOptions {
+        bindings,
+        arches: arch,
+        launch,
+    };
+    let report = ptxroof::report::analyze(&source, &input.display().to_string(), &opts)
         .with_context(|| format!("analyzing {}", input.display()))?;
 
     if json {
@@ -88,4 +107,20 @@ fn run() -> anyhow::Result<ExitCode> {
         print!("{}", ptxroof::report::text::render(&report));
     }
     Ok(ExitCode::SUCCESS)
+}
+
+/// `x,y,z` (y/z default to 1).
+fn parse_launch(text: &str) -> Result<[u32; 3], String> {
+    let mut dims = [1u32; 3];
+    let parts: Vec<&str> = text.split(',').collect();
+    if parts.is_empty() || parts.len() > 3 {
+        return Err(format!("--launch `{text}`: expected x,y,z"));
+    }
+    for (slot, part) in dims.iter_mut().zip(&parts) {
+        *slot = part
+            .trim()
+            .parse()
+            .map_err(|_| format!("--launch `{text}`: `{part}` is not a number"))?;
+    }
+    Ok(dims)
 }

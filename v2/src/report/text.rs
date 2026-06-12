@@ -38,6 +38,27 @@ pub fn render(report: &Report) -> String {
         if let Some(hot) = &k.hot_loop {
             let _ = writeln!(w, "  hot loop: {hot}");
         }
+        for v in &k.verdicts {
+            let _ = writeln!(
+                w,
+                "  verdict @ {} ({}, from {}): {} — loop {} AI(global) {} flop/B vs {} knee {:.1}",
+                v.arch,
+                v.machine,
+                v.source,
+                v.verdict,
+                v.loop_name,
+                v.ai_global,
+                v.precision,
+                v.knee
+            );
+        }
+        if let Some(l) = &k.launch {
+            let _ = writeln!(
+                w,
+                "  launch: {}x{}x{} = {} threads (from {})",
+                l.block[0], l.block[1], l.block[2], l.threads, l.source
+            );
+        }
         if k.ranking.len() > 1 {
             let _ = writeln!(w, "  loops by weight:");
             for (i, r) in k.ranking.iter().enumerate() {
@@ -57,6 +78,10 @@ pub fn render(report: &Report) -> String {
 
         let _ = writeln!(w, "  totals [static]:");
         render_aggregates(w, &k.totals, "    ");
+        if let Some(per_cta) = &k.totals_per_cta {
+            let _ = writeln!(w, "  totals per CTA [static]:");
+            render_aggregates(w, per_cta, "    ");
+        }
 
         if k.unknowns.is_empty() {
             let _ = writeln!(w, "  unknowns: none");

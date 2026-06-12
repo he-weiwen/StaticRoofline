@@ -7,7 +7,7 @@ pub mod stats;
 pub mod text;
 pub mod tree;
 
-pub use build::{AnalyzeError, BindingSpec, analyze, parse_bind};
+pub use build::{AnalyzeError, AnalyzeOptions, BindingSpec, analyze, parse_bind};
 pub use collect::{BlockMeasurements, ClassCounts, CountQualifier, collect};
 pub use stats::{Stats, Tally};
 pub use tree::Report;

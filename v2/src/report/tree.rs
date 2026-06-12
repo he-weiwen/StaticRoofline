@@ -56,6 +56,17 @@ pub struct KernelReport {
     /// (`flop + ... + unknown == total`) runs on these.
     pub instruction_classes: InstructionClasses,
     pub hot_loop: Option<String>,
+    /// Roofline verdicts, one per requested (or defaulted)
+    /// architecture, computed at the deepest hot-chain loop whose
+    /// per-iteration AI(global) is defined.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub verdicts: Vec<Verdict>,
+    /// Launch configuration, when known (flag or PTX directive).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub launch: Option<LaunchInfo>,
+    /// Kernel totals scaled to one CTA (needs `launch`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub totals_per_cta: Option<Aggregates>,
     /// Loops ranked by symbolic weight, heaviest first.
     pub ranking: Vec<RankEntry>,
     /// Top-level loop nodes, in program order.
@@ -85,6 +96,31 @@ pub struct InstructionClasses {
     pub control: u64,
     pub ignore: u64,
     pub unknown: u64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct Verdict {
+    pub arch: String,
+    /// The concrete part the machine table describes.
+    pub machine: String,
+    /// Where the table came from: "flag" or "target-directive".
+    pub source: String,
+    /// The loop the verdict is about.
+    #[serde(rename = "loop")]
+    pub loop_name: String,
+    /// Dominant flop precision of that loop; the knee uses its peak.
+    pub precision: String,
+    pub ai_global: f64,
+    pub knee: f64,
+    pub verdict: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct LaunchInfo {
+    pub block: [u32; 3],
+    pub threads: u64,
+    /// "flag", ".reqntid", or ".maxntid".
+    pub source: String,
 }
 
 #[derive(Debug, Serialize)]

@@ -1,0 +1,13 @@
+# NVIDIA A100-SXM4-40GB (GA100) — the canonical sm_80 part.
+# Source: NVIDIA A100 Tensor Core GPU datasheet (and the GA100
+# whitepaper), 2020: FP64 9.7 TFLOPS, FP32 19.5 TFLOPS, FP16 78
+# TFLOPS, BF16 39 TFLOPS (cuda cores, non-tensor); HBM2e 1555 GB/s.
+name = "A100-SXM4-40GB"
+arch = "sm_80"
+dram_bw_gbps = 1555.0
+
+[peak_tflops]
+f16 = 78.0
+bf16 = 39.0
+f32 = 19.5
+f64 = 9.7

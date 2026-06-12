@@ -1,0 +1,13 @@
+# NVIDIA GeForce RTX 3090 (GA102) — the canonical sm_86 part.
+# Source: NVIDIA Ampere GA102 GPU Architecture whitepaper, 2020:
+# FP32 35.58 TFLOPS, FP16 35.58 TFLOPS (1:1), FP64 1/64 rate
+# (0.556 TFLOPS); GDDR6X 936.2 GB/s.
+name = "GeForce RTX 3090"
+arch = "sm_86"
+dram_bw_gbps = 936.2
+
+[peak_tflops]
+f16 = 35.58
+bf16 = 35.58
+f32 = 35.58
+f64 = 0.556

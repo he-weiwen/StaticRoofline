@@ -34,6 +34,8 @@ pub enum AnalyzeError {
     Parse(#[from] ParseError),
     #[error("bad --bind: {0}")]
     Binding(String),
+    #[error("unknown architecture `{0}` — known: {1}")]
+    Arch(String, String),
 }
 
 /// One `--bind` argument: `name=value` or `idx:name=value`.
@@ -70,20 +72,62 @@ pub fn parse_bind(text: &str) -> Result<BindingSpec, String> {
     })
 }
 
+/// Caller-supplied analysis inputs (bet 4: launch config and
+/// architecture are inputs, never guesses).
+#[derive(Debug, Default)]
+pub struct AnalyzeOptions {
+    pub bindings: Vec<BindingSpec>,
+    /// `--arch` values; empty = default to the module's `.target`.
+    pub arches: Vec<String>,
+    /// `--launch x,y,z`; `None` = default to `.reqntid`/`.maxntid`
+    /// when the kernel carries one.
+    pub launch: Option<[u32; 3]>,
+}
+
 pub fn analyze(
     source: &str,
     input_name: &str,
-    binds: &[BindingSpec],
+    opts: &AnalyzeOptions,
 ) -> Result<Report, AnalyzeError> {
     let module = parse(source)?;
+
+    // Resolve architectures up front: explicit flags must name known
+    // tables (a usage error); the `.target` default degrades to a
+    // named unknown in the report instead.
+    let mut arches: Vec<(String, crate::machine::Machine, &'static str)> = Vec::new();
+    let mut arch_unknowns: Vec<String> = Vec::new();
+    if opts.arches.is_empty() {
+        let target = module.interner.resolve(module.target).to_owned();
+        match crate::machine::arch_table(&target) {
+            Some(m) => arches.push((target, m, "target-directive")),
+            None => arch_unknowns.push(target),
+        }
+    } else {
+        for a in &opts.arches {
+            match crate::machine::arch_table(a) {
+                Some(m) => arches.push((a.clone(), m, "flag")),
+                None => {
+                    return Err(AnalyzeError::Arch(
+                        a.clone(),
+                        crate::machine::known_archs().join(", "),
+                    ));
+                }
+            }
+        }
+    }
+
     let mut kernels = Vec::new();
     let mut classified = Fraction { num: 0, den: 0 };
     let mut trips_resolved = Fraction { num: 0, den: 0 };
     let mut bindings_echo = Vec::new();
 
     for kernel in &module.kernels {
-        let bind_map = resolve_bindings(&module, kernel, binds, &mut bindings_echo)?;
-        let k = KernelBuilder::new(&module, kernel, &bind_map).build();
+        let bind_map = resolve_bindings(&module, kernel, &opts.bindings, &mut bindings_echo)?;
+        let k = KernelBuilder::new(&module, kernel, &bind_map).build(
+            &arches,
+            &arch_unknowns,
+            opts.launch,
+        );
         classified.num += k.instruction_classes.total - k.instruction_classes.unknown;
         classified.den += k.instruction_classes.total;
         let mut count_loops = |nodes: &[LoopNode]| {
@@ -305,8 +349,10 @@ impl<'a> KernelBuilder<'a> {
     }
 
     /// Aggregate over blocks; `below` = aggregate within this loop
-    /// (multipliers stop there), `None` = whole kernel.
-    fn aggregates(&self, below: Option<LoopId>) -> Aggregates {
+    /// (multipliers stop there), `None` = whole kernel. With
+    /// `cta_threads`, every count additionally scales by its scope's
+    /// per-CTA multiplier (per-thread × threads, per-warp × warps).
+    fn aggregates(&self, below: Option<LoopId>, cta_threads: Option<u64>) -> Aggregates {
         let mut flops: BTreeMap<&'static str, TermSum> = BTreeMap::new();
         let mut flops_total = TermSum::default();
         let mut bytes: BTreeMap<&'static str, (TermSum, TermSum)> = BTreeMap::new();
@@ -344,7 +390,11 @@ impl<'a> KernelBuilder<'a> {
             for m in &bm.measurements {
                 let at_most =
                     bm.qualifier == CountQualifier::AtMost || m.predicated || chain_at_most;
-                let n = m.count as i64;
+                let scope_scale = match cta_threads {
+                    Some(threads) => crate::machine::cta_multiplier(m.scope, threads) as i64,
+                    None => 1,
+                };
+                let n = m.count as i64 * scope_scale;
                 match m.kind {
                     MeasureKind::Flops { precision } => {
                         flops
@@ -473,7 +523,7 @@ impl<'a> KernelBuilder<'a> {
             depth: self.forest.get(id).depth,
             trips,
             unroll,
-            per_iteration: self.aggregates(Some(id)),
+            per_iteration: self.aggregates(Some(id), None),
             loops: self
                 .forest
                 .children_of(id)
@@ -487,8 +537,8 @@ impl<'a> KernelBuilder<'a> {
     /// compares weights at all-symbols = 2^20 + 3 (large, with nonzero
     /// residues mod small powers of two so remainder loops keep their
     /// share). Deliberately a comparison heuristic, not a claim.
-    fn ranking(&self) -> Vec<RankEntry> {
-        let mut entries: Vec<(String, SymExpr, i64)> = (0..self.forest.loops.len())
+    fn ranking(&self) -> Vec<(LoopId, RankEntry)> {
+        let mut entries: Vec<(usize, String, SymExpr, i64)> = (0..self.forest.loops.len())
             .map(|i| {
                 let l = &self.forest.loops[i];
                 let mut weight = TermSum::default();
@@ -507,17 +557,84 @@ impl<'a> KernelBuilder<'a> {
                     .map(|s| (s, (1 << 20) + 3))
                     .collect();
                 let key = weight.bind(&approx).as_const().unwrap_or(i64::MAX);
-                (self.display[i].clone(), weight, key)
+                (i, self.display[i].clone(), weight, key)
             })
             .collect();
-        entries.sort_by(|a, b| b.2.cmp(&a.2).then_with(|| a.0.cmp(&b.0)));
+        entries.sort_by(|a, b| b.3.cmp(&a.3).then_with(|| a.1.cmp(&b.1)));
         entries
             .into_iter()
-            .map(|(name, w, _)| RankEntry {
-                loop_name: name,
-                weight: w.to_string(),
+            .map(|(i, name, w, _)| {
+                (
+                    LoopId(i as u32),
+                    RankEntry {
+                        loop_name: name,
+                        weight: w.to_string(),
+                    },
+                )
             })
             .collect()
+    }
+
+    /// Roofline verdicts at the deepest hot-chain loop whose
+    /// per-iteration AI(global) is defined — the altitude where both
+    /// the flops and the global traffic of the steady state are
+    /// constants. Walks UP from the heaviest loop: an innermost loop
+    /// that touches no global memory (k5's dot loop) defers to the
+    /// tile loop above it.
+    fn verdicts(
+        &self,
+        hot: Option<LoopId>,
+        arches: &[(String, crate::machine::Machine, &'static str)],
+    ) -> (Vec<Verdict>, Option<String>) {
+        let Some(hot) = hot else {
+            return (Vec::new(), None);
+        };
+        let mut cur = Some(hot);
+        while let Some(l) = cur {
+            let agg = self.aggregates(Some(l), None);
+            if let Some(ai) = agg.ai_global {
+                // Dominant flop precision: the largest constant column.
+                let precision = agg
+                    .flops
+                    .iter()
+                    .filter(|(k, _)| k.as_str() != "total")
+                    .filter_map(|(k, v)| v.expr.parse::<f64>().ok().map(|n| (k.clone(), n)))
+                    .max_by(|a, b| a.1.total_cmp(&b.1))
+                    .map(|(k, _)| k)
+                    .unwrap_or_else(|| "f32".to_owned());
+                let mut out = Vec::new();
+                let mut missing = None;
+                for (arch, machine, source) in arches {
+                    match machine.knee_flop_per_byte(&precision) {
+                        Some(knee) => out.push(Verdict {
+                            arch: arch.clone(),
+                            machine: machine.name.clone(),
+                            source: (*source).to_owned(),
+                            loop_name: self.display[l.0 as usize].clone(),
+                            precision: precision.clone(),
+                            ai_global: ai,
+                            knee,
+                            verdict: if ai >= knee {
+                                "compute-bound"
+                            } else {
+                                "memory-bound"
+                            }
+                            .to_owned(),
+                        }),
+                        None => {
+                            missing =
+                                Some(format!("machine table for {arch} has no {precision} peak"));
+                        }
+                    }
+                }
+                return (out, missing);
+            }
+            cur = self.forest.get(l).parent;
+        }
+        (
+            Vec::new(),
+            Some("no loop on the hot chain has constant per-iteration AI(global)".to_owned()),
+        )
     }
 
     fn unknowns(&self) -> Vec<UnknownEntry> {
@@ -596,7 +713,12 @@ impl<'a> KernelBuilder<'a> {
         out
     }
 
-    fn build(self) -> KernelReport {
+    fn build(
+        self,
+        arches: &[(String, crate::machine::Machine, &'static str)],
+        arch_unknowns: &[String],
+        launch_flag: Option<[u32; 3]>,
+    ) -> KernelReport {
         let name = self.module.interner.resolve(self.kernel.name).to_owned();
         let mut classes = InstructionClasses::default();
         for bm in &self.blocks {
@@ -611,6 +733,39 @@ impl<'a> KernelBuilder<'a> {
             classes.unknown += c.unknown as u64;
         }
         let ranking = self.ranking();
+        let (verdicts, verdict_hole) = self.verdicts(ranking.first().map(|(id, _)| *id), arches);
+
+        // Launch config: explicit flag, else the PTX's own directives.
+        let launch = launch_flag
+            .map(|block| (block, "flag"))
+            .or(self.kernel.reqntid.map(|b| (b, ".reqntid")))
+            .or(self.kernel.maxntid.map(|b| (b, ".maxntid")))
+            .map(|(block, source)| LaunchInfo {
+                block,
+                threads: block.iter().map(|&d| d as u64).product(),
+                source: source.to_owned(),
+            });
+        let totals_per_cta = launch
+            .as_ref()
+            .map(|l| self.aggregates(None, Some(l.threads)));
+
+        let mut unknowns = self.unknowns();
+        for arch in arch_unknowns {
+            unknowns.push(UnknownEntry {
+                what: format!("architecture {arch}"),
+                count: None,
+                reason: "no machine table — pass --arch with one of the known                          architectures for verdicts"
+                    .to_owned(),
+            });
+        }
+        if let Some(reason) = verdict_hole {
+            unknowns.push(UnknownEntry {
+                what: "verdict".to_owned(),
+                count: None,
+                reason,
+            });
+        }
+
         KernelReport {
             demangled: demangle(&name),
             name,
@@ -626,16 +781,19 @@ impl<'a> KernelBuilder<'a> {
                 })
                 .collect(),
             instruction_classes: classes,
-            hot_loop: ranking.first().map(|r| r.loop_name.clone()),
-            ranking,
+            hot_loop: ranking.first().map(|(_, r)| r.loop_name.clone()),
+            verdicts,
+            launch,
+            totals_per_cta,
+            ranking: ranking.into_iter().map(|(_, r)| r).collect(),
             loops: self
                 .forest
                 .top_level()
                 .into_iter()
                 .map(|t| self.loop_node(t))
                 .collect(),
-            totals: self.aggregates(None),
-            unknowns: self.unknowns(),
+            totals: self.aggregates(None, None),
+            unknowns,
         }
     }
 }

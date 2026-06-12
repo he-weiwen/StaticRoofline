@@ -875,7 +875,7 @@ Phase 1:
 - [ ] PR 10 — SymExpr
 - [ ] PR 11 — trip counts (nvcc shapes)
 - [x] PR 12 — `analyze` report ★S6 ★S7 ★S8 ★S9
-- [ ] PR 13 — machine model + verdicts + README ★S1 — **Phase 1 done**
+- [x] PR 13 — machine model + verdicts + README ★S1 — **Phase 1 done**
 
 Phase 2 (backlog — tick when triggered and executed):
 - [ ] tensor/async/atomic/SFU families (+ k11/k12/k14 fixtures)

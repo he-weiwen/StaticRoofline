@@ -25,7 +25,7 @@
 [[scenario]]
 id = "S1"
 case = "s1-blocktiling"
-status = "xfail"
+status = "pass"
 
 [[scenario]]
 id = "S6"
@@ -69,5 +69,5 @@ enforced = true
 
 [[min_coverage]]
 metric = "loop_trips_resolved"
-percent = 92.31
+percent = 93.33
 enforced = true
