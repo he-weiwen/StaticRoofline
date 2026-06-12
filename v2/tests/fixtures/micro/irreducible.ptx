@@ -1,0 +1,43 @@
+//
+// HAND-WRITTEN: irreducible two-entry cycle (PLAN.md §6, PR 06).
+// The entry block branches into the middle of an A <-> B cycle, so
+// neither cycle block dominates the other: there is no natural loop
+// here. The analyzer must flag the region unknown-multiplicity and
+// never guess a trip count.
+//
+.version 8.7
+.target sm_80
+.address_size 64
+
+.visible .entry micro_irreducible(
+	.param .u64 micro_irreducible_param_0,
+	.param .u32 micro_irreducible_param_1
+)
+{
+	.reg .pred 	%p<3>;
+	.reg .f32 	%f<4>;
+	.reg .b32 	%r<4>;
+	.reg .b64 	%rd<3>;
+
+	ld.param.u64 	%rd1, [micro_irreducible_param_0];
+	ld.param.u32 	%r1, [micro_irreducible_param_1];
+	cvta.to.global.u64 	%rd2, %rd1;
+	ld.global.f32 	%f3, [%rd2];
+	mov.u32 	%r3, 0;
+	setp.gt.s32 	%p1, %r1, 16;
+	@%p1 bra 	$L__BB0_B;
+
+$L__BB0_A:
+	fma.rn.f32 	%f3, %f3, %f3, 0f3F800000;
+	add.s32 	%r3, %r3, 1;
+
+$L__BB0_B:
+	add.f32 	%f3, %f3, 0f40000000;
+	add.s32 	%r3, %r3, 2;
+	setp.lt.s32 	%p2, %r3, %r1;
+	@%p2 bra 	$L__BB0_A;
+
+	st.global.f32 	[%rd2], %f3;
+	ret;
+
+}

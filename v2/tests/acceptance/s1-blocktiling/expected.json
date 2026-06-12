@@ -1,0 +1,34 @@
+{
+  "kernels": [
+    {
+      "name": "_Z20hgemm_2d_blocktilingILi64ELi64ELi8ELi8ELi8EEviiifPK6__halfS2_fPS0_",
+      "loops": [
+        {
+          "name": "5_2d_blocktiling.cuh:39",
+          "trips": {"expr": "ceildiv(param_2, 8)"},
+          "per_iteration": {
+            "flops": {"f32": {"expr": "1024", "at_most": false}},
+            "bytes": {"global": {"load": {"expr": "32", "at_most": false}}},
+            "ai_global": 32.0
+          },
+          "loops": [
+            {
+              "name": "5_2d_blocktiling.cuh:53",
+              "trips": {"expr": "8"},
+              "per_iteration": {
+                "flops": {"f32": {"expr": "128", "at_most": false}},
+                "unrolled_source_lines": {"5_2d_blocktiling.cuh:55": 8}
+              }
+            }
+          ]
+        }
+      ],
+      "verdicts": [
+        {"arch": "sm_80", "loop": "5_2d_blocktiling.cuh:39",
+         "ai_global": 32.0, "verdict": "compute-bound"},
+        {"arch": "sm_86", "loop": "5_2d_blocktiling.cuh:39",
+         "ai_global": 32.0, "verdict": "memory-bound"}
+      ]
+    }
+  ]
+}

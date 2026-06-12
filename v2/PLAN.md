@@ -243,9 +243,11 @@ per-run coverage stats in the result JSON — % of instructions classified
 non-Unknown, % of loops with resolved trip counts, % of global accesses
 with a known pattern. The test runner aggregates these across the whole
 corpus and enforces the minimums recorded in
-`tests/acceptance/status.toml`; each minimum becomes enforced at the PR
-that lands its analysis (classification at PR 08, trip counts at PR 11;
-Phase 2 analyses add their own, e.g. access patterns). This makes
+`tests/acceptance/status.toml`. Runner-side enforcement needs JSON
+reports, which exist from PR 12 — so PR 08/11 land their corpus
+coverage as cargo-level checks (classification allowlist, trip-shape
+units) and both status.toml entries flip `enforced = true` at PR 12;
+Phase 2 analyses add their own entries, e.g. access patterns. This makes
 "useful in the majority of cases"
 a tested number rather than an aspiration, and it closes the
 demand-driven maintenance loop: when a future toolchain changes an
@@ -286,7 +288,12 @@ instruction. Each check registers as its analysis lands (PR 08, 09,
   not deleted until the Phase 2 switchover.
 - Environment pins for initial generation (recorded per fixture):
   CUDA 13.2 (`V13.2.78`), fixtures target sm_80 (cross-compilation
-  needs no matching GPU). Phase 2 producers carry their own verified
+  needs no matching GPU). nvcc output is NOT byte-deterministic by
+  default — `-lineinfo`'s `.debug_str` embeds an `_INTERNAL_` module
+  token derived from a per-invocation random number (verified: two
+  identical compiles differ). Every regen.sh therefore passes
+  `-frandom-seed=<fixture-name>`, nvcc's documented fix, which makes
+  rerun output byte-identical (verified). Phase 2 producers carry their own verified
   pins: clang against local LLVM trunk, Triton 3.5.1, ptxas/nvdisasm/
   cuobjdump from CUDA 13.2, RTX 4090 (sm_89) for NCU captures.
 - **Template instantiation**: the ladder kernels (k5/k11/k12/k14) are
@@ -308,18 +315,20 @@ instruction. Each check registers as its analysis lands (PR 08, 09,
 
 Each scenario is a user question turned into an executable spec.
 
-**Phase 1 — `analyze` only; all five committed (xfail) in PR 02; all
-fixtures are already in the Phase 1 corpus.** S6–S9 flip together at
-PR 12 (the signal that the report is real); S1 closes Phase 1 at
-PR 13 by adding the verdicts.
+**Phase 1 — `analyze` only; all committed (xfail) in PR 02; all
+fixtures are already in the Phase 1 corpus.** One case dir = one
+binary invocation, so S7 and S9 fan out into dotted scenario ids
+(S7.1/S7.2, S9.1–S9.3) — eight status.toml entries for five user
+questions. S6–S9 flip together at PR 12 (the signal that the report
+is real); S1 closes Phase 1 at PR 13 by adding the verdicts.
 
 | ID | User question | Fixtures | Key assertions | Lands |
 |----|---------------|----------|----------------|-------|
-| S1 | Is this kernel's design point what I computed on paper? | `k5` (= `test/5_2d_blocktiling.cuh`) sm_80 PTX | nested loop tree w/ source lines; trips `K/8`; unroll detected; per-iter flops/bytes; AI(global)=32.0; per-arch knee verdicts (sm_80 compute-bound, sm_86 memory-bound) | PR 13 |
-| S6 | Where does the work go? | `k2` | loops ranked by symbolic weight: main loop `K`-dependent, remainder `K mod 4`, epilogue constant; headline names the main loop's source line; unroll main+remainder pair linked as one logical loop (the bet-2 ranking claim, tested) | PR 12 |
-| S7 | Did tiling pay off? | `k1` + `k5` | two independent runs, no `diff` verb: AI(k1 inner) = 0.25 flop/B vs AI(k5 inner) = 32 flop/B, both shape-independent (no `--bind`) — the contrast is two comparable numbers | PR 12 |
-| S8 | Am I on the precision path I think? | `k2` | flop table: f32 cuda-core only, **0 f16 flops** despite `__half` data (compute is converted to f32); 8 `cvt` per main-loop iteration counted as non-flop overhead; 2 B loads ×8/iter; one 2 B store in the epilogue | PR 12 |
-| S9 | Does the tool admit what it can't see? | `micro/data-dep`, `micro/branchy`, `micro/no-loc` | data-dependent latch → trips = *named* unknown with reason, totals stay symbolic (never silent zero), trip-coverage stat visibly < 100%; in-loop conditional → `≤` markers propagate to every aggregate; no `.loc` → loops named by label, report complete; exit 0 in all three (unknowns are results, not errors) | PR 12 |
+| S1 | Is this kernel's design point what I computed on paper? | `k5` (= `test/5_2d_blocktiling.cuh`, BM=64 BN=64 BK=8 TM=8 TN=8) sm_80 PTX | nested loop tree w/ source lines; trips `ceildiv(K, 8)` (the latch is `setp.lt.u32`, so the general form is ceil-div); fully-unrolled register-tile loops recovered by line aggregation; per-iter flops/bytes; AI(global)=32.0; per-arch knee verdicts (sm_80 compute-bound, sm_86 memory-bound) | PR 13 |
+| S6 | Where does the work go? | `k2` | loops ranked by symbolic weight: main loop `K`-dependent, remainder `K mod 4`; headline names the main loop's source line; unroll main+remainder pair linked as one logical loop (the bet-2 ranking claim, tested) | PR 12 |
+| S7.1 / S7.2 | Did tiling pay off? | `k1`, `k5` | two independent runs, no `diff` verb: AI(k1 main loop) = 0.5 flop/B vs AI(k5 tile loop) = 32 flop/B, both shape-independent (no `--bind`) — the contrast is two comparable numbers. (0.5, not the 0.25 the design table first guessed: 8 flops / 16 B per unrolled iteration under the same fma=2 convention that makes k5 = 32.) | PR 12 |
+| S8 | Am I on the precision path I think? | `k2` | flop table: f32 cuda-core only, **0 f16 flops** despite `__half` data (compute is converted to f32); 8 `cvt` per main-loop iteration counted as conversion overhead; 2 B loads ×8/iter; one guarded 2 B store in the epilogue (`at_most` — the bounds guard makes kernel totals upper bounds) | PR 12 |
+| S9.1 / S9.2 / S9.3 | Does the tool admit what it can't see? | `micro/data_dep`, `micro/branchy`, `micro/no_loc` | data-dependent latch → trips = *named* unknown with reason, totals stay symbolic (never silent zero), trip-coverage stat visibly < 100%; in-loop conditional → `≤` markers propagate to every aggregate; no `.loc` → loops named by label, report complete; exit 0 in all three (unknowns are results, not errors) | PR 12 |
 
 **Phase 2 — each lands with, and is the acceptance test of, its
 backlog item; "matters when" is that item's trigger.** Fully designed,
@@ -339,7 +348,13 @@ of Phase 1's). Verified against real nvcc 13.2 output so far: k2's
 K-loop is unrolled ×4 with a `.pragma "nounroll"` remainder loop, so
 S6 and S8 see main-loop trips `(K − K mod 4)/4` (4 `fma` + 8 `cvt` + 8 loads per
 iteration) plus a remainder loop trips `K mod 4` — not a single
-trips-K loop. S3's access-pattern claims were hand-verified in the
+trips-K loop. k5 (BM=64 BN=64 BK=8 TM=8 TN=8): the outer tile loop's
+latch is `setp.lt.u32` stepping by 8 → trips `ceildiv(K, 8)`; the
+inner dot loop survives un-unrolled (trips 8, 16 `ld.shared` + 64
+`fma` per iteration); the register-tile and epilogue loops are fully
+unrolled into straight-line code (what PR 12's line aggregation
+recovers — including `.loc 1 0 …` "no source line" markers, which
+attribution must skip). S3's access-pattern claims were hand-verified in the
 emitted PTX: A's address derives from `2·(K·row)` (lane-invariant
 product, non-affine), B's carries tid.x coefficient 2 B. k5's inner dot
 loop is partially unrolled; k11/k12/k14 carry `.maxntid` from
@@ -428,11 +443,13 @@ outside this list is built until Phase 1 ships.
   -lineinfo`); hand-written micro fixtures (`micro/` — single-loop,
   branchy, irreducible, no-loc, data-dep); `tools/fetch-manuals.sh` (PTX ISA
   manual into untracked `refs/` — the grammar reference PRs 03–04
-  transcribe against); the five Phase 1 acceptance defs (S1, S6–S9 —
-  §4), all `xfail` in `status.toml`, plus the classification and
-  trip-count min_coverage entries (unenforced until PR 08/11).
-- Tests: fixture lint (a runner check): every fixture has a provenance
-  header + regen.sh; the status file loads; all five Phase 1 scenarios
+  transcribe against); the Phase 1 acceptance defs (S1, S6, S7.1/S7.2,
+  S8, S9.1–S9.3 — §4), all `xfail` in `status.toml`, plus the
+  classification and trip-count min_coverage entries (unenforced until
+  PR 12).
+- Tests: fixture lint (a runner check): every fixture declares its
+  origin — Provenance header + regen.sh, or HAND-WRITTEN, or
+  HAND-EDITED; the status file loads; all Phase 1 scenarios
   runnable-and-xfailing against the stub.
 - Done when: corpus committed, regen reproducible (`regen.sh` rerun is
   a no-op diff modulo date), S1 + S6–S9 visible as xfail in the
@@ -540,9 +557,10 @@ of `lib/PTX/Classifier.cpp`)
   changes the answer); T2 **corpus coverage check**: every instruction
   in every fixture classifies non-Unknown or appears in
   `classify-allowlist.txt` — additions to the allowlist require review.
-  The classification min_coverage entry becomes enforced in status.toml;
-  the `classified + allowlisted-unknown = total` verifier check
-  registers.
+  (The status.toml min_coverage entry flips enforced at PR 12, when the
+  JSON reports the runner aggregates first exist; the
+  `classified + allowlisted-unknown = total` verifier check registers
+  there too.)
 - Done when: the coverage check is green over the Phase 1 corpus.
 
 **PR 09 — Measurement v2 + collection + Stats.** (~300 LOC)
@@ -611,8 +629,8 @@ of `lib/PTX/Classifier.cpp`)
   pinned verbatim); unroll main+remainder pair; multi-exit → unknown;
   data-dependent → unknown. T2: `k2` main loop trips `(K − K mod 4)/4`
   with `K = param 2`, remainder `K mod 4`; `k5` outer tile loop trips
-  `K/8`. The trip-count min_coverage entry becomes enforced in
-  status.toml.
+  `ceildiv(K, 8)`. (The status.toml min_coverage entry flips enforced
+  at PR 12.)
 - Done when: ladder trip counts match the committed expected outputs;
   every unknown carries a reason string.
 
@@ -846,7 +864,7 @@ they extend; no backlog item blocks another.
 
 Phase 1:
 - [x] PR 01 — scaffold + harness (cargo, clap `analyze` stub, CLI test runner)
-- [ ] PR 02 — nvcc fixture corpus (k1/k2/k5 + micro) + scenario specs S1, S6–S9
+- [x] PR 02 — nvcc fixture corpus (k1/k2/k5 + micro) + scenario specs S1, S6–S9
 - [ ] PR 03 — lexer
 - [ ] PR 04 — parser/AST
 - [ ] PR 05 — CFG

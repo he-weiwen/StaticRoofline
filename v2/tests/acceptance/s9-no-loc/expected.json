@@ -1,0 +1,10 @@
+{
+  "kernels": [
+    {
+      "name": "micro_no_loc",
+      "loops": [
+        {"name": "$L__BB0_2"}
+      ]
+    }
+  ]
+}

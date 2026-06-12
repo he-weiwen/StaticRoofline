@@ -8,27 +8,66 @@
 #
 # "xfail" = expected failure, the term LLVM lit (XFAIL:) and pytest use.
 #
-# PR 01 commits the schema; the Phase 1 scenario entries (S1, S6-S9)
-# and the first min_coverage entries land with the fixture corpus in
-# PR 02.
+# Scenario schema: id is the PLAN.md §4 row (dotted ids are one row's
+# fan-out into several invocations — the runner runs one case per
+# entry); case is the case dir under tests/acceptance/ or tests/cli/;
+# status is "xfail" | "pass".
 #
-# Scenario schema:
-#
-#   [[scenario]]
-#   id = "S1"                 # PLAN.md §4 row
-#   case = "s1-blocktiling"   # case dir under tests/acceptance/ or
-#                             #   tests/cli/
-#   status = "xfail"          # xfail | pass
-#
-# Minimum-coverage schema (minimums may only rise):
-#
-#   [[min_coverage]]
-#   metric = "instructions_classified"  # key in the result JSON's
-#                                       #   "coverage" object
-#   percent = 0.0                       # rewritten upward by --raise-min
-#   enforced = false                    # flips true at the PR that lands
-#                                       #   the emitting analysis
+# Minimum-coverage schema (minimums may only rise): metric is a key in
+# the result JSON's "coverage" object; percent is rewritten upward by
+# --raise-min; enforced flips true at the PR that lands the emitting
+# analysis in the JSON report (PR 12).
 #
 # Format contract for --raise-min: inside a [[min_coverage]] block the
 # `metric` line precedes its `percent` line; the runner rewrites the
 # number in place, so every raise is visible as a diff of this file.
+
+[[scenario]]
+id = "S1"
+case = "s1-blocktiling"
+status = "xfail"
+
+[[scenario]]
+id = "S6"
+case = "s6-hot-loops"
+status = "xfail"
+
+[[scenario]]
+id = "S7.1"
+case = "s7-naive-ai"
+status = "xfail"
+
+[[scenario]]
+id = "S7.2"
+case = "s7-tiled-ai"
+status = "xfail"
+
+[[scenario]]
+id = "S8"
+case = "s8-precision-audit"
+status = "xfail"
+
+[[scenario]]
+id = "S9.1"
+case = "s9-data-dep"
+status = "xfail"
+
+[[scenario]]
+id = "S9.2"
+case = "s9-branchy"
+status = "xfail"
+
+[[scenario]]
+id = "S9.3"
+case = "s9-no-loc"
+status = "xfail"
+
+[[min_coverage]]
+metric = "instructions_classified"
+percent = 0.0
+enforced = false
+
+[[min_coverage]]
+metric = "loop_trips_resolved"
+percent = 0.0
+enforced = false

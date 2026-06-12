@@ -1,0 +1,23 @@
+{
+  "kernels": [
+    {
+      "name": "_Z15hgemm_coalescediiifPK6__halfS1_fPS_",
+      "hot_loop": "2_coalesced.cuh:14",
+      "ranking": [
+        {"loop": "2_coalesced.cuh:14"},
+        {"loop": "2_coalesced.cuh:14 (remainder)"}
+      ],
+      "loops": [
+        {
+          "name": "2_coalesced.cuh:14",
+          "trips": {"expr": "(param_2 - param_2 mod 4) / 4"},
+          "unroll": {"factor": 4, "remainder": "2_coalesced.cuh:14 (remainder)"}
+        },
+        {
+          "name": "2_coalesced.cuh:14 (remainder)",
+          "trips": {"expr": "param_2 mod 4"}
+        }
+      ]
+    }
+  ]
+}

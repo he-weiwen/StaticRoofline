@@ -8,6 +8,12 @@ survive unchanged.
 
 Pipeline, in order:
 
+  0. Fixture lint. Every committed .ptx under tests/fixtures/ declares
+     where it came from (PLAN.md §3 fixture policy): a "Provenance:"
+     header plus a sibling regen.sh (generated), a "HAND-WRITTEN:"
+     header (authored for this suite), or a "HAND-EDITED:" header
+     (negative case derived from a named base fixture).
+
   1. CLI tests (T2). Every directory under tests/cli/ with a case.toml
      is run unconditionally and must pass. A case declares:
        args         = ["analyze", "{case}/in.ptx"]  argv after the
@@ -102,6 +108,26 @@ def verify_report(report):
     for name, fn in VERIFIER_CHECKS:
         violations += [f"verifier '{name}': {v}" for v in fn(report)]
     return violations
+
+
+# --------------------------------------------------------------------------
+# Fixture lint (PLAN.md §3 fixture policy)
+
+
+def lint_fixtures(fixtures_dir):
+    """Every .ptx declares its origin in a leading comment header."""
+    errs = []
+    for ptx in sorted(fixtures_dir.rglob("*.ptx")):
+        head = ptx.read_text()[:2000]
+        rel = ptx.relative_to(fixtures_dir)
+        if "Provenance:" in head:
+            if not (ptx.parent / "regen.sh").is_file():
+                errs.append(f"{rel}: Provenance header but no regen.sh beside it")
+        elif "HAND-WRITTEN:" not in head and "HAND-EDITED:" not in head:
+            errs.append(
+                f"{rel}: no Provenance / HAND-WRITTEN / HAND-EDITED header"
+            )
+    return errs
 
 
 # --------------------------------------------------------------------------
@@ -329,6 +355,12 @@ def main():
     failures = 0
     reports = []
 
+    # 0: fixture lint
+    if FIXTURES_DIR.is_dir():
+        for err in lint_fixtures(FIXTURES_DIR):
+            print(f"FAIL  lint    {err}")
+            failures += 1
+
     # 1+2: CLI tests (+ report verifier inside run_case)
     case_dirs = (
         sorted(d for d in CLI_TESTS_DIR.iterdir() if (d / "case.toml").is_file())
@@ -396,12 +428,31 @@ def main():
 
 
 def self_test():
+    import tempfile
+
     n = 0
 
     def ok(cond, what):
         nonlocal n
         n += 1
         assert cond, f"self-test failed: {what}"
+
+    # fixture lint: each origin category, and each way to violate it
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        (root / "gen").mkdir()
+        (root / "gen" / "a.ptx").write_text("// Provenance: regen.sh\n")
+        ok(lint_fixtures(root) != [], "Provenance without regen.sh fails")
+        (root / "gen" / "regen.sh").write_text("#!/bin/sh\n")
+        ok(lint_fixtures(root) == [], "Provenance with regen.sh passes")
+        (root / "micro").mkdir()
+        (root / "micro" / "b.ptx").write_text("// no header at all\n")
+        ok(any("no Provenance" in e for e in lint_fixtures(root)),
+           "headerless fixture named")
+        (root / "micro" / "b.ptx").write_text("// HAND-WRITTEN: minimal\n")
+        ok(lint_fixtures(root) == [], "HAND-WRITTEN passes without regen.sh")
+        (root / "micro" / "c.ptx").write_text("// HAND-EDITED: base k2, edit X\n")
+        ok(lint_fixtures(root) == [], "HAND-EDITED passes without regen.sh")
 
     # partial JSON comparison: the T2 contract
     ok(subset_match({"a": 1}, {"a": 1, "b": 2}) == [], "extra actual field passes")

@@ -1,0 +1,14 @@
+{
+  "kernels": [
+    {
+      "name": "micro_branchy",
+      "totals": {"flops": {"f32": {"at_most": true}}},
+      "loops": [
+        {
+          "name": "micro/branchy.cu:4",
+          "per_iteration": {"flops": {"f32": {"expr": "4", "at_most": true}}}
+        }
+      ]
+    }
+  ]
+}
