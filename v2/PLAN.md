@@ -866,7 +866,7 @@ Phase 1:
 - [x] PR 01 — scaffold + harness (cargo, clap `analyze` stub, CLI test runner)
 - [x] PR 02 — nvcc fixture corpus (k1/k2/k5 + micro) + scenario specs S1, S6–S9
 - [x] PR 03 — lexer
-- [ ] PR 04 — parser/AST
+- [x] PR 04 — parser/AST
 - [ ] PR 05 — CFG
 - [ ] PR 06 — dominators + loop forest
 - [ ] PR 07 — loop naming + demangling

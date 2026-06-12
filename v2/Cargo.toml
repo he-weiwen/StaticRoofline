@@ -14,4 +14,9 @@ publish = false
 # that needed it. The full allowlist lives in PLAN.md §2.
 
 [dependencies]
+anyhow = "1"          # binary-only error rendering (PLAN.md §2)
 clap = { version = "4", features = ["derive"] }
+thiserror = "2"       # library error types
+
+[dev-dependencies]
+insta = "1"           # unit-level snapshots (AST dumps, loop trees)

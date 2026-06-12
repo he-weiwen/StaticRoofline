@@ -7,6 +7,7 @@
 //! `Result`-returning API; `main.rs` only parses arguments and renders
 //! errors.
 
+pub mod core;
 pub mod parse;
 
 /// Tool version, baked in from Cargo.toml at compile time.
