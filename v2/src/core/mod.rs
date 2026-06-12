@@ -1,8 +1,9 @@
-//! Core types: the flat module IR and its interner (PLAN.md §5).
-//! SymExpr and Measurement join in their PRs (10, 09).
+//! Core types: the flat module IR, its interner, and the Measurement
+//! record. SymExpr joins in PR 10.
 
 pub mod intern;
 pub mod ir;
+pub mod measurement;
 
 pub use intern::{Interner, Symbol};
 pub use ir::{
