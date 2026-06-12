@@ -52,6 +52,19 @@ or fewer (cache reuse). A static number is a bound and a design check,
 not a measurement; for measured DRAM traffic and achieved rates, use
 Nsight Compute.
 
+Verdicts inherit this contract: "memory-bound" means the *requested*
+AI sits below the machine's knee — a no-reuse worst case, since the
+knee divides peak compute by DRAM bandwidth. Both halves of that
+sentence were validated on hardware (RTX 4090, the k5 fixture at
+4096³, Nsight Compute): the requested flop and byte counts matched the
+hardware counters to the digit, yet the kernel ran at 37 TFLOP/s —
+above its no-reuse ceiling of AI × bandwidth ≈ 32 TFLOP/s — because
+the 72 MB L2 absorbed every re-read and DRAM moved only the compulsory
+matrix bytes, at 3% of peak. Once the working set outgrows L2, the
+ceiling is real again. The demand side is this tool's half of the
+story; what the memory hierarchy does with the demand is Nsight
+Compute's.
+
 Counts marked `<=` are upper bounds (code behind data-dependent or
 bounds-check branches). Whatever the tool cannot derive it reports as a
 *named unknown* with a reason — an unknown is a result, not an error.
