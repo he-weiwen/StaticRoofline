@@ -16,6 +16,7 @@ publish = false
 [dependencies]
 anyhow = "1"          # binary-only error rendering (PLAN.md §2)
 clap = { version = "4", features = ["derive"] }
+cpp_demangle = "0.4"  # kernel names; fallible -> plain names pass through
 thiserror = "2"       # library error types
 
 [dev-dependencies]
