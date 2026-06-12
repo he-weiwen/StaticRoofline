@@ -1,11 +1,13 @@
 //! ptxroof — static roofline analysis for PTX kernels (v2 of
 //! nvptx_analyzer; see PLAN.md).
 //!
-//! PR 01 scaffold: the library is intentionally empty of analysis code.
-//! Modules land per the Phase 1 sequence in PLAN.md, starting with
-//! `parse/` (PR 03). The library/binary split is architectural:
-//! everything analyzable lives here behind a `Result`-returning API;
-//! `main.rs` only parses arguments and renders errors.
+//! Modules land per the Phase 1 sequence in PLAN.md: `parse/` holds the
+//! text frontend (lexer now; parser next, PR 04). The library/binary
+//! split is architectural: everything analyzable lives here behind a
+//! `Result`-returning API; `main.rs` only parses arguments and renders
+//! errors.
+
+pub mod parse;
 
 /// Tool version, baked in from Cargo.toml at compile time.
 pub fn version() -> &'static str {
