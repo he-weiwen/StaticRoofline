@@ -31,6 +31,13 @@ impl Interner {
     pub fn resolve(&self, sym: Symbol) -> &str {
         &self.strings[sym.0 as usize]
     }
+
+    /// Look up an already-interned string without inserting — for
+    /// read-only consumers of a built module (CFG, classifier), which
+    /// hold `&Module` and compare symbols by id.
+    pub fn get(&self, text: &str) -> Option<Symbol> {
+        self.map.get(text).copied()
+    }
 }
 
 #[cfg(test)]

@@ -7,6 +7,7 @@
 //! `Result`-returning API; `main.rs` only parses arguments and renders
 //! errors.
 
+pub mod cfg;
 pub mod core;
 pub mod parse;
 
