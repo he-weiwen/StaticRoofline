@@ -4,7 +4,7 @@
       "name": "micro_data_dep",
       "loops": [
         {
-          "name": "micro/data_dep.cu:4",
+          "name": "data_dep.cu:4",
           "trips": {"unknown": "latch condition depends on a value loaded inside the loop"}
         }
       ]

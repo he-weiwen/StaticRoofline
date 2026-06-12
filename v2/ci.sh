@@ -8,7 +8,10 @@ cd "$(dirname "$0")"
 # --locked: refuse to run if Cargo.lock disagrees with Cargo.toml, so the
 # committed lockfile is always the one actually being built.
 cargo fmt --check
-cargo clippy --locked --all-targets -- -D warnings
+# CARGO_INCREMENTAL=0: clippy replays cached incremental results and
+# can silently skip lints for items already in the shared check
+# cache (observed here: PR 10 lints surfacing two PRs late).
+CARGO_INCREMENTAL=0 cargo clippy --locked --all-targets -- -D warnings
 cargo test --locked
 cargo build --locked # the test runner drives target/debug/ptxroof
 

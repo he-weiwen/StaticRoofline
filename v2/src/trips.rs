@@ -520,7 +520,7 @@ impl<'a> Tracer<'a> {
                 )
             }
             "ld" => {
-                if mods.iter().any(|&m| m == "param")
+                if mods.contains(&"param")
                     && let Some(Operand::Memory { base, .. }) =
                         ops.get(1).map(|&i| self.module.operand(i))
                     && let Operand::SymbolRef(pname) = self.module.operand(*base)
@@ -886,9 +886,9 @@ mod tests {
     fn unroll_pair_links_main_and_remainder() {
         // Two sibling loops on the same source line with the
         // (X − X mod 4)/4 and X mod 4 trip shapes.
-        let src = format!(
+        let src = String::from(
             ".version 8.7\n.target sm_80\n.address_size 64\n\
-             .visible .entry k(\n.param .u32 k_param_0\n)\n{{\n\
+             .visible .entry k(\n.param .u32 k_param_0\n)\n{\n\
              ld.param.u32 %r1, [k_param_0];\n\
              and.b32 %r9, %r1, 3;\n\
              sub.s32 %r7, %r9, %r1;\n\
@@ -903,7 +903,7 @@ mod tests {
              .loc 1 14 9\n\
              add.s32 %r4, %r4, -1;\n\
              setp.ne.s32 %p2, %r4, 0;\n@%p2 bra $L__R;\n\
-             ret;\n}}\n.file 1 \"kern.cu\"\n"
+             ret;\n}\n.file 1 \"kern.cu\"\n",
         );
         let m = parse(&src).expect("parses");
         let k = &m.kernels[0];

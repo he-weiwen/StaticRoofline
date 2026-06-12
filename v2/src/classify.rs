@@ -168,7 +168,7 @@ pub fn classify(module: &Module, instr: &Instr) -> OpClass {
         "and" | "or" | "xor" | "not" | "shl" | "shr" | "lop3" | "bfe" | "bfi" | "brev" | "popc"
         | "clz" | "bfind" | "bmsk" | "szext" | "prmt" | "rem" | "sad" | "dp4a" | "dp2a"
         | "mul24" | "mad24" => {
-            if mods.iter().any(|&m| m == "pred") {
+            if mods.contains(&"pred") {
                 OpClass::NonFlopArith {
                     kind: ArithKind::Predicate,
                 }

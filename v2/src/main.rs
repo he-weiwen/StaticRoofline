@@ -1,9 +1,9 @@
 //! Thin CLI shell over the `ptxroof` library.
 //!
-//! `analyze` is still a stub (exit 2) until the report lands in PR 12;
-//! `analyze --dump-ast` already works — it is the canonical human/debug
-//! view of the parsed flat IR. Further verbs join the `Command` enum
-//! additively as their features land.
+//! One verb: `analyze` — text report by default, `--json` for the
+//! serialized result tree, `--dump-ast` for the parsed-module debug
+//! view. Further verbs join the `Command` enum additively as their
+//! features land.
 
 use anyhow::Context;
 use clap::{Parser, Subcommand};
@@ -11,10 +11,10 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 /// Exit code for operational errors (unreadable input, parse error,
-/// not-implemented). Mirrors the diff(1)/grep(1) convention: 0 =
-/// success, 1 = reserved for "ran fine and the answer is negative",
-/// 2 = could not do the job. clap itself exits 2 on usage errors, the
-/// same class of problem.
+/// bad flags). Mirrors the diff(1)/grep(1) convention: 0 = success,
+/// 1 = reserved for "ran fine and the answer is negative", 2 = could
+/// not do the job. clap itself exits 2 on usage errors, the same
+/// class of problem.
 const EXIT_ERROR: u8 = 2;
 
 #[derive(Parser)]
@@ -33,6 +33,13 @@ enum Command {
     /// Analyze a PTX file: per-loop flops/bytes/AI and verdicts
     Analyze {
         input: PathBuf,
+        /// Emit the result tree as JSON instead of the text report
+        #[arg(long)]
+        json: bool,
+        /// Bind a kernel parameter for numeric columns:
+        /// `name=value` or `idx:name=value` (params are positional)
+        #[arg(long)]
+        bind: Vec<String>,
         /// Print the parsed module in canonical PTX form and exit
         #[arg(long)]
         dump_ast: bool,
@@ -51,18 +58,34 @@ fn main() -> ExitCode {
 
 fn run() -> anyhow::Result<ExitCode> {
     let cli = Cli::parse();
-    let Command::Analyze { input, dump_ast } = cli.command;
+    let Command::Analyze {
+        input,
+        json,
+        bind,
+        dump_ast,
+    } = cli.command;
+    let source =
+        std::fs::read_to_string(&input).with_context(|| format!("reading {}", input.display()))?;
+
     if dump_ast {
-        let source = std::fs::read_to_string(&input)
-            .with_context(|| format!("reading {}", input.display()))?;
         let module = ptxroof::parse::parser::parse(&source)
             .with_context(|| format!("parsing {}", input.display()))?;
         print!("{}", ptxroof::parse::ast::dump(&module));
         return Ok(ExitCode::SUCCESS);
     }
-    eprintln!(
-        "ptxroof: not implemented yet (lands PR 12): analyze {}",
-        input.display()
-    );
-    Ok(ExitCode::from(EXIT_ERROR))
+
+    let binds = bind
+        .iter()
+        .map(|b| ptxroof::report::parse_bind(b))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(anyhow::Error::msg)?;
+    let report = ptxroof::report::analyze(&source, &input.display().to_string(), &binds)
+        .with_context(|| format!("analyzing {}", input.display()))?;
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        print!("{}", ptxroof::report::text::render(&report));
+    }
+    Ok(ExitCode::SUCCESS)
 }

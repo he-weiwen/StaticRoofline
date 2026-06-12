@@ -1,0 +1,154 @@
+//! The result tree (PLAN.md §6, PR 12): ergonomic, owned, resolved —
+//! the only structure that leaves the library. JSON output IS the
+//! `Serialize` derivation of these structs; the text report renders
+//! the same values, so the two views cannot drift.
+//!
+//! Schema conventions, pinned by the committed scenario expectations:
+//! - every count is `{"expr": string, "at_most": bool}` — symbolic
+//!   expressions print via SymExpr's deterministic form, `at_most`
+//!   marks upper bounds (rendered `≤` in text);
+//! - trips are `{"expr": ...}` or `{"unknown": reason}` — an unknown
+//!   is a result, not an error;
+//! - the flop table always carries all four FP precisions plus
+//!   "total", so "0 f16 flops" is assertable (S8);
+//! - byte tables always carry global/shared/local; other spaces appear
+//!   when touched;
+//! - `coverage` is `{metric: {num, den}}` count pairs — the runner
+//!   aggregates them corpus-wide (percentages cannot be aggregated).
+
+use serde::Serialize;
+use std::collections::BTreeMap;
+
+#[derive(Debug, Serialize)]
+pub struct Report {
+    pub input: String,
+    /// `--bind` values, echoed (bet 4: inputs are visible).
+    pub bindings: Vec<Binding>,
+    pub kernels: Vec<KernelReport>,
+    pub coverage: BTreeMap<String, Fraction>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct Binding {
+    pub param: usize,
+    pub name: String,
+    pub value: i64,
+}
+
+#[derive(Debug, Serialize, Clone, Copy, PartialEq)]
+pub struct Fraction {
+    pub num: u64,
+    pub den: u64,
+}
+
+#[derive(Debug, Serialize, Clone, PartialEq)]
+pub struct Count {
+    pub expr: String,
+    pub at_most: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct KernelReport {
+    pub name: String,
+    pub demangled: String,
+    pub params: Vec<ParamInfo>,
+    /// Instruction-class tallies; the verifier's accounting identity
+    /// (`flop + ... + unknown == total`) runs on these.
+    pub instruction_classes: InstructionClasses,
+    pub hot_loop: Option<String>,
+    /// Loops ranked by symbolic weight, heaviest first.
+    pub ranking: Vec<RankEntry>,
+    /// Top-level loop nodes, in program order.
+    pub loops: Vec<LoopNode>,
+    pub totals: Aggregates,
+    /// Every named hole in the analysis: unclassified instructions,
+    /// unquantifiable bytes, unresolved trips, irreducible regions,
+    /// call sites. Never silently empty when something was dropped.
+    pub unknowns: Vec<UnknownEntry>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ParamInfo {
+    pub index: usize,
+    #[serde(rename = "type")]
+    pub ty: String,
+    pub name: String,
+}
+
+#[derive(Debug, Serialize, Default, Clone, Copy)]
+pub struct InstructionClasses {
+    pub total: u64,
+    pub flop: u64,
+    pub non_flop_arith: u64,
+    pub memory: u64,
+    pub sync: u64,
+    pub control: u64,
+    pub ignore: u64,
+    pub unknown: u64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RankEntry {
+    #[serde(rename = "loop")]
+    pub loop_name: String,
+    /// The weight expression: executed instructions per invocation.
+    pub weight: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct LoopNode {
+    pub name: String,
+    pub label: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line: Option<u32>,
+    pub depth: u32,
+    pub trips: Trips,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unroll: Option<Unroll>,
+    pub per_iteration: Aggregates,
+    pub loops: Vec<LoopNode>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct Trips {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expr: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unknown: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct Unroll {
+    pub factor: i64,
+    pub remainder: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct Aggregates {
+    /// Keys: "total", "f16", "bf16", "f32", "f64" — always present.
+    pub flops: BTreeMap<String, Count>,
+    /// Keys: space names; global/shared/local always present.
+    pub bytes: BTreeMap<String, DirectionCounts>,
+    pub conversions: Count,
+    /// flops per global byte, when both are constants and bytes > 0.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ai_global: Option<f64>,
+    /// Straight-line repeated source lines (fully-unrolled loops):
+    /// "file:line" → workload-op copies. Empty = omitted.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub unrolled_source_lines: BTreeMap<String, u64>,
+}
+
+#[derive(Debug, Serialize, Clone, PartialEq)]
+pub struct DirectionCounts {
+    pub load: Count,
+    pub store: Count,
+}
+
+#[derive(Debug, Serialize)]
+pub struct UnknownEntry {
+    pub what: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub count: Option<u64>,
+    pub reason: String,
+}

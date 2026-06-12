@@ -95,12 +95,109 @@ CASE_TIMEOUT_S = 120
 # --------------------------------------------------------------------------
 # Report verifier (PLAN.md §3): (name, fn(report) -> [violation, ...]).
 # Each fn receives one case's parsed JSON report and returns human-readable
-# violation strings. Checks register as analyses land:
-#   PR 08  classified + allowlisted-unknown == total instructions
-#   PR 09  sum of per-block counts == kernel totals
-#   PR 12  per-loop per-iteration x bound trip expr == flat count;
-#          every Measurement provenance index resolves to an instruction
-VERIFIER_CHECKS = []
+# violation strings — identities any correct implementation satisfies, with
+# no per-case expectations. (The IR-level identities that need data the
+# JSON deliberately omits — sum of per-block tallies == kernel totals,
+# measurement provenance resolves — live as Rust integration tests in
+# tests/report_invariants.rs.)
+
+
+def _verify_instruction_accounting(report):
+    """Every instruction is accounted exactly once (the check v1's
+    AsyncCopy silent-zero bug would have failed)."""
+    out = []
+    parts = ("flop", "non_flop_arith", "memory", "sync", "control", "ignore", "unknown")
+    for k in report.get("kernels", []):
+        c = k.get("instruction_classes", {})
+        got = sum(c.get(p, 0) for p in parts)
+        if got != c.get("total", -1):
+            out.append(
+                f"kernel {k.get('name')}: class counts sum to {got}, "
+                f"total is {c.get('total')}"
+            )
+    return out
+
+
+def _verify_classification_coverage(report):
+    """coverage.instructions_classified is derived from, and must agree
+    with, the per-kernel class counts."""
+    cov = report.get("coverage", {}).get("instructions_classified")
+    if cov is None:
+        return ["coverage.instructions_classified missing"]
+    total = sum(k.get("instruction_classes", {}).get("total", 0)
+                for k in report.get("kernels", []))
+    unknown = sum(k.get("instruction_classes", {}).get("unknown", 0)
+                  for k in report.get("kernels", []))
+    out = []
+    if cov.get("den") != total:
+        out.append(f"classified.den {cov.get('den')} != instruction total {total}")
+    if cov.get("num") != total - unknown:
+        out.append(f"classified.num {cov.get('num')} != total - unknown {total - unknown}")
+    return out
+
+
+def _verify_trip_coverage(report):
+    """coverage.loop_trips_resolved must agree with the loop tree."""
+    def walk(nodes):
+        resolved = total = 0
+        for n in nodes:
+            total += 1
+            resolved += 1 if "expr" in n.get("trips", {}) else 0
+            r, t = walk(n.get("loops", []))
+            resolved, total = resolved + r, total + t
+        return resolved, total
+
+    resolved = total = 0
+    for k in report.get("kernels", []):
+        r, t = walk(k.get("loops", []))
+        resolved, total = resolved + r, total + t
+    cov = report.get("coverage", {}).get("loop_trips_resolved")
+    if cov is None:
+        return ["coverage.loop_trips_resolved missing"]
+    if (cov.get("num"), cov.get("den")) != (resolved, total):
+        return [
+            f"loop_trips_resolved {cov.get('num')}/{cov.get('den')} does not "
+            f"match the loop tree ({resolved}/{total})"
+        ]
+    return []
+
+
+def _verify_ai_consistency(report):
+    """Wherever AI(global) is printed alongside integer flop/byte
+    counts, it must equal their ratio."""
+    out = []
+
+    def check(agg, where):
+        ai = agg.get("ai_global")
+        if ai is None:
+            return
+        try:
+            flops = int(agg["flops"]["total"]["expr"])
+            by = agg["bytes"]["global"]
+            bytes_total = int(by["load"]["expr"]) + int(by["store"]["expr"])
+        except (KeyError, ValueError):
+            return  # symbolic; AI should not have been emitted, but
+            # that is a schema question, not this identity
+        if bytes_total > 0 and abs(ai - flops / bytes_total) > 1e-9:
+            out.append(f"{where}: ai_global {ai} != {flops}/{bytes_total}")
+
+    def walk(nodes, prefix):
+        for n in nodes:
+            check(n.get("per_iteration", {}), f"{prefix}/{n.get('name')}")
+            walk(n.get("loops", []), f"{prefix}/{n.get('name')}")
+
+    for k in report.get("kernels", []):
+        check(k.get("totals", {}), f"{k.get('name')}/totals")
+        walk(k.get("loops", []), k.get("name", "?"))
+    return out
+
+
+VERIFIER_CHECKS = [
+    ("instruction-accounting", _verify_instruction_accounting),
+    ("classification-coverage", _verify_classification_coverage),
+    ("trip-coverage", _verify_trip_coverage),
+    ("ai-consistency", _verify_ai_consistency),
+]
 
 
 def verify_report(report):
@@ -514,16 +611,67 @@ def self_test():
     ok(tomllib.loads(new_text)["min_coverage"][0]["percent"] == 75.0,
        "rewritten status file still parses")
 
-    # report-verifier hook
+    # report-verifier hook plumbing
     VERIFIER_CHECKS.append(
         ("totals", lambda r: [] if r.get("a") == r.get("b") else ["a != b"])
     )
     try:
-        ok(verify_report({"a": 1, "b": 1}) == [], "holding identity is silent")
-        got = verify_report({"a": 1, "b": 2})
-        ok(got == ["verifier 'totals': a != b"], "violated identity is named")
+        totals_only = lambda r: [
+            v for v in verify_report(r) if v.startswith("verifier 'totals'")
+        ]
+        ok(totals_only({"a": 1, "b": 1}) == [], "holding identity is silent")
+        ok(totals_only({"a": 1, "b": 2}) == ["verifier 'totals': a != b"],
+           "violated identity is named")
     finally:
         VERIFIER_CHECKS.pop()
+
+    # the registered identities: each must hold on a good report and
+    # name the violation on a doctored one
+    good = {
+        "kernels": [
+            {
+                "name": "k",
+                "instruction_classes": {
+                    "total": 5, "flop": 1, "non_flop_arith": 1, "memory": 1,
+                    "sync": 0, "control": 1, "ignore": 0, "unknown": 1,
+                },
+                "loops": [
+                    {"name": "l", "trips": {"expr": "8"},
+                     "per_iteration": {
+                         "ai_global": 0.5,
+                         "flops": {"total": {"expr": "8"}},
+                         "bytes": {"global": {"load": {"expr": "16"},
+                                              "store": {"expr": "0"}}},
+                     },
+                     "loops": []},
+                ],
+                "totals": {},
+            }
+        ],
+        "coverage": {
+            "instructions_classified": {"num": 4, "den": 5},
+            "loop_trips_resolved": {"num": 1, "den": 1},
+        },
+    }
+    ok(verify_report(good) == [], f"all identities hold: {verify_report(good)}")
+    import copy
+
+    bad = copy.deepcopy(good)
+    bad["kernels"][0]["instruction_classes"]["flop"] = 2
+    ok(any("instruction-accounting" in v for v in verify_report(bad)),
+       "class-sum violation named")
+    bad = copy.deepcopy(good)
+    bad["coverage"]["instructions_classified"]["num"] = 5
+    ok(any("classification-coverage" in v for v in verify_report(bad)),
+       "classified-coverage violation named")
+    bad = copy.deepcopy(good)
+    bad["kernels"][0]["loops"][0]["trips"] = {"unknown": "reason"}
+    ok(any("trip-coverage" in v for v in verify_report(bad)),
+       "trip-coverage violation named")
+    bad = copy.deepcopy(good)
+    bad["kernels"][0]["loops"][0]["per_iteration"]["ai_global"] = 2.0
+    ok(any("ai-consistency" in v for v in verify_report(bad)),
+       "AI-ratio violation named")
 
     print(f"run.py --self-test: {n} assertions passed")
     return 0

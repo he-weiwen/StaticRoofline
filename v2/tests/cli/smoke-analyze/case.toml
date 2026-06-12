@@ -1,6 +1,4 @@
-# Smoke test for positional-argument parsing and the {case} placeholder.
-# The stub never opens the file, so in.ptx here is a placeholder; PR 12
-# turns this into a real analyze test with expected.json.
+# Smoke test for the analyze verb on a minimal kernel; in.ptx lives in
+# the case dir, so this also pins the {case} placeholder expansion.
 args = ["analyze", "{case}/in.ptx"]
-exit = 2
-check_stream = "stderr"
+exit = 0

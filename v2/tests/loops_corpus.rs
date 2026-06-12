@@ -38,10 +38,12 @@ fn shape(m: &Module, cfg: &Cfg, f: &LoopForest) -> Vec<(String, u32)> {
     v
 }
 
+/// (fixture, [(header label, depth)...], irreducible edge count)
+type ForestRow = (&'static str, &'static [(&'static str, u32)], usize);
+
 #[test]
 fn ladder_and_micro_loop_forests_are_pinned() {
-    let expected: &[(&str, &[(&str, u32)], usize)] = &[
-        // (fixture, [(header label, depth)...], irreducible edge count)
+    let expected: &[ForestRow] = &[
         ("k1/k1.sm_80.ptx", &[("$L__BB0_4", 1), ("$L__BB0_7", 1)], 0),
         ("k2/k2.sm_80.ptx", &[("$L__BB0_4", 1), ("$L__BB0_7", 1)], 0),
         ("k5/k5.sm_80.ptx", &[("$L__BB0_2", 1), ("$L__BB0_3", 2)], 0),

@@ -30,44 +30,44 @@ status = "xfail"
 [[scenario]]
 id = "S6"
 case = "s6-hot-loops"
-status = "xfail"
+status = "pass"
 
 [[scenario]]
 id = "S7.1"
 case = "s7-naive-ai"
-status = "xfail"
+status = "pass"
 
 [[scenario]]
 id = "S7.2"
 case = "s7-tiled-ai"
-status = "xfail"
+status = "pass"
 
 [[scenario]]
 id = "S8"
 case = "s8-precision-audit"
-status = "xfail"
+status = "pass"
 
 [[scenario]]
 id = "S9.1"
 case = "s9-data-dep"
-status = "xfail"
+status = "pass"
 
 [[scenario]]
 id = "S9.2"
 case = "s9-branchy"
-status = "xfail"
+status = "pass"
 
 [[scenario]]
 id = "S9.3"
 case = "s9-no-loc"
-status = "xfail"
+status = "pass"
 
 [[min_coverage]]
 metric = "instructions_classified"
-percent = 0.0
-enforced = false
+percent = 100.0
+enforced = true
 
 [[min_coverage]]
 metric = "loop_trips_resolved"
-percent = 0.0
-enforced = false
+percent = 92.31
+enforced = true

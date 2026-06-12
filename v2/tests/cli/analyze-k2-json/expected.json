@@ -1,0 +1,34 @@
+{
+  "bindings": [],
+  "kernels": [
+    {
+      "name": "_Z15hgemm_coalescediiifPK6__halfS1_fPS_",
+      "demangled": "hgemm_coalesced(int, int, int, float, __half const*, __half const*, float, __half*)",
+      "instruction_classes": {"total": 101, "flop": 7, "memory": 20, "unknown": 0},
+      "hot_loop": "2_coalesced.cuh:14",
+      "ranking": [
+        {"loop": "2_coalesced.cuh:14", "weight": "31 * ((param_2 - param_2 mod 4) / 4)"},
+        {"loop": "2_coalesced.cuh:14 (remainder)", "weight": "12 * (param_2 mod 4)"}
+      ],
+      "totals": {
+        "flops": {
+          "total": {"expr": "8 * ((param_2 - param_2 mod 4) / 4) + 2 * (param_2 mod 4) + 3", "at_most": true},
+          "f32": {"expr": "8 * ((param_2 - param_2 mod 4) / 4) + 2 * (param_2 mod 4) + 3", "at_most": true},
+          "f16": {"expr": "0", "at_most": false}
+        },
+        "bytes": {
+          "global": {
+            "load": {"expr": "16 * ((param_2 - param_2 mod 4) / 4) + 4 * (param_2 mod 4) + 2", "at_most": true},
+            "store": {"expr": "2", "at_most": true}
+          }
+        },
+        "conversions": {"expr": "8 * ((param_2 - param_2 mod 4) / 4) + 2 * (param_2 mod 4) + 2", "at_most": true}
+      },
+      "unknowns": []
+    }
+  ],
+  "coverage": {
+    "instructions_classified": {"num": 101, "den": 101},
+    "loop_trips_resolved": {"num": 2, "den": 2}
+  }
+}

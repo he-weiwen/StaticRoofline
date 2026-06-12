@@ -61,10 +61,13 @@ impl SymExpr {
 
     // -- smart constructors ------------------------------------------------
 
+    // Smart constructor, deliberately an associated function (no
+    // self): it canonicalizes rather than implementing arithmetic.
+    #[allow(clippy::should_implement_trait)]
     pub fn add(a: SymExpr, b: SymExpr) -> SymExpr {
         let mut terms = Vec::new();
         let mut konst = 0i64;
-        let mut fold = |c: i64, terms: &mut Vec<SymExpr>, konst: &mut i64| {
+        let fold = |c: i64, terms: &mut Vec<SymExpr>, konst: &mut i64| {
             match konst.checked_add(c) {
                 Some(v) => *konst = v,
                 // Refuse to fold: the constant stays a separate term,
@@ -103,10 +106,16 @@ impl SymExpr {
         }
     }
 
+    // Smart constructor, deliberately an associated function (no
+    // self): it canonicalizes rather than implementing arithmetic.
+    #[allow(clippy::should_implement_trait)]
     pub fn sub(a: SymExpr, b: SymExpr) -> SymExpr {
         SymExpr::add(a, SymExpr::mul(SymExpr::Const(-1), b))
     }
 
+    // Smart constructor, deliberately an associated function (no
+    // self): it canonicalizes rather than implementing arithmetic.
+    #[allow(clippy::should_implement_trait)]
     pub fn mul(a: SymExpr, b: SymExpr) -> SymExpr {
         // Distribute a constant over a sum: keeps sums in the canonical
         // "positive terms first" form (so −1·(m − K) becomes K − m, not
@@ -125,7 +134,7 @@ impl SymExpr {
         let mut factors = Vec::new();
         let mut konst = 1i64;
         let mut overflowed = Vec::new();
-        let mut fold =
+        let fold =
             |c: i64, overflowed: &mut Vec<SymExpr>, konst: &mut i64| match konst.checked_mul(c) {
                 Some(v) => *konst = v,
                 None => overflowed.push(SymExpr::Const(c)),

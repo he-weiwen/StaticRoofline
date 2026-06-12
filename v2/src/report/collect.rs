@@ -78,7 +78,7 @@ pub fn collect(
     (0..cfg.blocks.len() as u32)
         .map(BlockId)
         .map(|bid| {
-            let qualifier = block_qualifier(cfg, forest, &exit_blocks, bid);
+            let qualifier = block_qualifier(forest, &exit_blocks, bid);
             let mut measurements = Vec::new();
             let mut counts = ClassCounts::default();
             let b = cfg.block(bid);
@@ -154,12 +154,7 @@ pub fn collect(
         .collect()
 }
 
-fn block_qualifier(
-    cfg: &Cfg,
-    forest: &LoopForest,
-    exit_blocks: &[BlockId],
-    block: BlockId,
-) -> CountQualifier {
+fn block_qualifier(forest: &LoopForest, exit_blocks: &[BlockId], block: BlockId) -> CountQualifier {
     if !forest.doms.is_reachable(block) {
         return CountQualifier::AtMost; // executes zero times; ≤ is honest
     }

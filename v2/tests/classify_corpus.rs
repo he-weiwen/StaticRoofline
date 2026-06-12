@@ -1,9 +1,9 @@
 //! Corpus-wide classification coverage (PLAN.md §6, PR 08): every
 //! instruction in every fixture classifies non-Unknown, or its
 //! mnemonic is listed in tests/classify-allowlist.txt. This is the
-//! check that makes "useful in the majority of cases" a tested number
-//! - when a new toolchain or kernel family introduces an idiom we
-//! don't classify, this names it before any user files a bug.
+//! check that makes "useful in the majority of cases" a tested number:
+//! when a new toolchain or kernel family introduces an idiom we don't
+//! classify, this names it before any user files a bug.
 
 use ptxroof::classify::{OpClass, classify};
 use ptxroof::core::Stmt;

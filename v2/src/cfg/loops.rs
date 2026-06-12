@@ -176,12 +176,9 @@ pub fn loop_forest(cfg: &Cfg) -> LoopForest {
                     state[s.0 as usize] = 1;
                     stack.push((s, 0));
                 }
-                1 => {
-                    // Retreating edge b -> s.
-                    if !doms.dominates(s, b) {
-                        irreducible.push((b, s));
-                    }
-                }
+                // Retreating edge b -> s that is not a back edge.
+                1 if !doms.dominates(s, b) => irreducible.push((b, s)),
+                1 => {}
                 _ => {}
             }
         } else {
