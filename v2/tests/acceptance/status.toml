@@ -23,8 +23,13 @@
 # number in place, so every raise is visible as a diff of this file.
 
 [[scenario]]
-id = "S1"
+id = "S1.1"
 case = "s1-blocktiling"
+status = "pass"
+
+[[scenario]]
+id = "S1.2"
+case = "s1-blocktiling-sm89"
 status = "pass"
 
 [[scenario]]
@@ -69,5 +74,5 @@ enforced = true
 
 [[min_coverage]]
 metric = "loop_trips_resolved"
-percent = 93.33
+percent = 94.12
 enforced = true

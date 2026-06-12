@@ -288,7 +288,9 @@ instruction. Each check registers as its analysis lands (PR 08, 09,
   not deleted until the Phase 2 switchover.
 - Environment pins for initial generation (recorded per fixture):
   CUDA 13.2 (`V13.2.78`), fixtures target sm_80 (cross-compilation
-  needs no matching GPU). nvcc output is NOT byte-deterministic by
+  needs no matching GPU; since PR 14, k1/k5 are also committed at
+  sm_89 — same toolchain, byte-identical bodies, only `.target`
+  differs). nvcc output is NOT byte-deterministic by
   default — `-lineinfo`'s `.debug_str` embeds an `_INTERNAL_` module
   token derived from a per-invocation random number (verified: two
   identical compiles differ). Every regen.sh therefore passes
@@ -317,14 +319,15 @@ Each scenario is a user question turned into an executable spec.
 
 **Phase 1 — `analyze` only; all committed (xfail) in PR 02; all
 fixtures are already in the Phase 1 corpus.** One case dir = one
-binary invocation, so S7 and S9 fan out into dotted scenario ids
-(S7.1/S7.2, S9.1–S9.3) — eight status.toml entries for five user
-questions. S6–S9 flip together at PR 12 (the signal that the report
-is real); S1 closes Phase 1 at PR 13 by adding the verdicts.
+binary invocation, so S1, S7 and S9 fan out into dotted scenario ids
+(S1.1/S1.2, S7.1/S7.2, S9.1–S9.3) — nine status.toml entries for five
+user questions. S6–S9 flip together at PR 12 (the signal that the
+report is real); S1 closes Phase 1 at PR 13 by adding the verdicts;
+S1.2 (the sm_89 fan-out) follows in PR 14.
 
 | ID | User question | Fixtures | Key assertions | Lands |
 |----|---------------|----------|----------------|-------|
-| S1 | Is this kernel's design point what I computed on paper? | `k5` (= `test/5_2d_blocktiling.cuh`, BM=64 BN=64 BK=8 TM=8 TN=8) sm_80 PTX | nested loop tree w/ source lines; trips `ceildiv(K, 8)` (the latch is `setp.lt.u32`, so the general form is ceil-div); fully-unrolled register-tile loops recovered by line aggregation; per-iter flops/bytes; AI(global)=32.0; per-arch knee verdicts (sm_80 compute-bound, sm_86 memory-bound) | PR 13 |
+| S1.1 / S1.2 | Is this kernel's design point what I computed on paper? (and: does the verdict follow the part?) | `k5` (= `test/5_2d_blocktiling.cuh`, BM=64 BN=64 BK=8 TM=8 TN=8) sm_80 + sm_89 PTX | nested loop tree w/ source lines; trips `ceildiv(K, 8)` (the latch is `setp.lt.u32`, so the general form is ceil-div); fully-unrolled register-tile loops recovered by line aggregation; per-iter flops/bytes; AI(global)=32.0; per-arch knee verdicts (sm_80 compute-bound, sm_86 memory-bound). S1.2: the same kernel at `.target sm_89`, no `--arch` flag — the verdict defaults to the target directive (RTX 4090 table) and lands memory-bound (AI 32 < f32 knee 81.9) | PR 13 / PR 14 |
 | S6 | Where does the work go? | `k2` | loops ranked by symbolic weight: main loop `K`-dependent, remainder `K mod 4`; headline names the main loop's source line; unroll main+remainder pair linked as one logical loop (the bet-2 ranking claim, tested) | PR 12 |
 | S7.1 / S7.2 | Did tiling pay off? | `k1`, `k5` | two independent runs, no `diff` verb: AI(k1 main loop) = 0.5 flop/B vs AI(k5 tile loop) = 32 flop/B, both shape-independent (no `--bind`) — the contrast is two comparable numbers. (0.5, not the 0.25 the design table first guessed: 8 flops / 16 B per unrolled iteration under the same fma=2 convention that makes k5 = 32.) | PR 12 |
 | S8 | Am I on the precision path I think? | `k2` | flop table: f32 cuda-core only, **0 f16 flops** despite `__half` data (compute is converted to f32); 8 `cvt` per main-loop iteration counted as conversion overhead; 2 B loads ×8/iter; one guarded 2 B store in the epilogue (`at_most` — the bounds guard makes kernel totals upper bounds) | PR 12 |
@@ -683,6 +686,49 @@ of `lib/PTX/Classifier.cpp`)
   status.toml; a newcomer can go from `git clone` to the `k5` report
   using only the README. **Phase 1 ends here.**
 
+**PR 14 — sm_89 fixtures + S1.2 (the verdict follows the part) + NCU
+validation.** (fixtures + 1 case; post-Phase-1, same conventions)
+- Contents: k1/k5 `regen.sh` loop over `sm_80 sm_89`; committed
+  `k1.sm_89.ptx` / `k5.sm_89.ptx` (verified at generation: the nvcc
+  13.2 PTX bodies are byte-identical to sm_80 — only `.target`
+  differs, so no new instruction families or trip shapes enter the
+  corpus); acceptance case `s1-blocktiling-sm89` (scenario S1.2) with
+  no `--arch` flag — first coverage of the `.target`-directive default
+  on a non-sm_80 module: the S1 design point (AI 32) lands
+  memory-bound on the RTX 4090 table (f32 knee 81.9) where sm_80 said
+  compute-bound.
+- Hardware validation (one-off on the local RTX 4090; harness and NCU
+  runs not committed — NCU import stays a Phase 2 trigger). Every
+  static *demand* count was achieved exactly at the test shapes, where
+  the analysis's `≤` qualifiers predict tightness (all guards pass):
+  - k5 @ 4096³ (grid 64×64, 64 threads/CTA): measured FFMA
+    68,736,253,952 and FMUL 16,777,216 ⇒ flops 137,489,285,120 = the
+    static bound to the digit. k1 @ 1024³ (grid 32×32, 1024
+    threads/CTA): FFMA 1,074,790,400, FMUL 1,048,576 ⇒ 2,150,629,376,
+    again exact; k1 L1 global-store bytes = the requested 2,097,152
+    exactly.
+  - L1 byte counters are sector-granular and deviate from requested
+    bytes exactly as the access geometry predicts: a sector model
+    derived from the static counts reproduces both measurements to the
+    byte — k1 ld 3,223,322,624 B (= requested − half of A's traffic:
+    warp-broadcast loads, one 32 B sector serves a 64 B request) and
+    k5 ld 6,710,886,400 B (tile rows are 16 B in 32 B sectors ⇒ ×1.5;
+    the epilogue's 2 B accesses at 16 B stride fetch ×8). k5 st ×8 for
+    the same epilogue-stride reason.
+  - DRAM traffic is compulsory bytes only (k5 read 100,687,744 B vs
+    A+B+C = 100,663,296; k1 6,295,424 vs 6,291,456): the 72 MB L2
+    absorbs all re-reads at these shapes, so the no-reuse DRAM
+    roofline does not bite — k5 measured 37.0 TFLOP/s, *above* the
+    static AI×BW ceiling of 32.3, with DRAM at 3.2% of peak (NCU
+    speed-of-light: SM 73.7%, L1 66%). k1: 4.5 TFLOP/s, L1-bound
+    (L1 90.5%, DRAM 1.4%). This quantifies the README's static-vs-
+    measured boundary on real hardware: the demand side (this tool's
+    output) is exact; what the memory hierarchy does with the demand
+    (NCU's side) moved k5 across the verdict line at this problem
+    size — at working sets ≫ L2 the bound returns.
+- Done when: S1.2 green alongside S1.1; regen of all four kN PTX files
+  is a no-op diff; trip-coverage ratchet raised (16/17 = 94.12%).
+
 ### Phase 2 — the demand-driven backlog
 
 Nothing here is scheduled. An item starts only when its trigger fires;
@@ -761,8 +807,18 @@ measured-vs-static question. `csv` crate joins the allowlist;
 kernel-name join (demangling-tolerant); transferred/requested ratio
 per kernel; versioned header check, fail loudly on schema drift.
 Verified blocker on this machine: `ERR_NVGPUCTRPERM` — capture needs
-`sudo ncu` or `NVreg_RestrictProfilingToAdminUsers=0`; capture is a
-manual, documented step and CI only ever reads committed CSV.
+`sudo ncu` or `NVreg_RestrictProfilingToAdminUsers=0` (even
+`--query-metrics` is gated; sudo also needs ncu's absolute path,
+`/usr/local/cuda/bin/ncu`); capture is a manual, documented step and
+CI only ever reads committed CSV. Verified at PR 14 (ncu 2026.1.1
+`--csv`, local RTX 4090): the demand-side counters that correspond to
+this tool's static columns are
+`smsp__sass_thread_inst_executed_op_{ffma,fmul,fadd}_pred_on.sum`
+(flops = 2·ffma + fmul + fadd) and
+`l1tex__t_bytes_pipe_lsu_mem_global_op_{ld,st}.sum` (sector-granular —
+expect geometry-dependent deviation from requested bytes, exact-match
+only for full-sector access patterns); `dram__bytes_{read,write}.sum`
+and the `SpeedOfLight` section carry the measured side.
 
 **`annotate` HTML.** Trigger: wanting the per-line view. Source↔PTX
 interleave via `.loc`, per-instruction badges (loop depth, class,
@@ -868,14 +924,15 @@ Phase 1:
 - [x] PR 03 — lexer
 - [x] PR 04 — parser/AST
 - [x] PR 05 — CFG
-- [ ] PR 06 — dominators + loop forest
-- [ ] PR 07 — loop naming + demangling
-- [ ] PR 08 — classifier (+ corpus coverage check)
-- [ ] PR 09 — Measurement + Stats
-- [ ] PR 10 — SymExpr
-- [ ] PR 11 — trip counts (nvcc shapes)
+- [x] PR 06 — dominators + loop forest
+- [x] PR 07 — loop naming + demangling
+- [x] PR 08 — classifier (+ corpus coverage check)
+- [x] PR 09 — Measurement + Stats
+- [x] PR 10 — SymExpr
+- [x] PR 11 — trip counts (nvcc shapes)
 - [x] PR 12 — `analyze` report ★S6 ★S7 ★S8 ★S9
 - [x] PR 13 — machine model + verdicts + README ★S1 — **Phase 1 done**
+- [x] PR 14 — sm_89 fixtures (k1/k5) ★S1.2 + NCU validation on the local RTX 4090
 
 Phase 2 (backlog — tick when triggered and executed):
 - [ ] tensor/async/atomic/SFU families (+ k11/k12/k14 fixtures)

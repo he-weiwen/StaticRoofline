@@ -21,8 +21,10 @@ use std::path::PathBuf;
 
 const FIXTURES: &[&str] = &[
     "k1/k1.sm_80.ptx",
+    "k1/k1.sm_89.ptx",
     "k2/k2.sm_80.ptx",
     "k5/k5.sm_80.ptx",
+    "k5/k5.sm_89.ptx",
     "micro/single_loop.ptx",
     "micro/branchy.ptx",
     "micro/irreducible.ptx",
@@ -85,8 +87,10 @@ fn bound_flop_totals_agree_with_an_independent_evaluation() {
     // Fixtures with fully resolvable trips and one symbolic parameter.
     let cases: &[(&str, usize)] = &[
         ("k1/k1.sm_80.ptx", 2),
+        ("k1/k1.sm_89.ptx", 2),
         ("k2/k2.sm_80.ptx", 2),
         ("k5/k5.sm_80.ptx", 2),
+        ("k5/k5.sm_89.ptx", 2),
         ("micro/single_loop.ptx", 1),
         ("micro/branchy.ptx", 1),
     ];
