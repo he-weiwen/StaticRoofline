@@ -2,8 +2,18 @@
 
 A ground-up rewrite of the analyzer with PTX text as the input substrate,
 implemented in Rust. Lives entirely under `v2/`; v1 (`lib/`, `test/`)
-stays untouched and working until the differential harness (PR 21) proves
-parity, after which v1 goes into maintenance mode.
+stays untouched and working; a differential harness (Phase 2) can prove
+parity before v1 retires into maintenance mode.
+
+The plan has two phases. **Phase 1 (PRs 01–13)** builds the minimal
+*genuinely useful* analyzer: `ptxroof analyze` on nvcc PTX, producing a
+loop tree with per-iteration flops/bytes/AI, honest named unknowns, and
+a compute-vs-memory verdict — scenario S1 end to end. **Phase 2** is a
+demand-driven backlog: every other capability, each held until a real
+occasion triggers it, never built speculatively. The source tree
+contains only what Phase 1 needs; extensibility lives in the
+architecture (enums, the verb-subcommand CLI, the registry hooks), not
+in dormant code.
 
 Companion to `STATUS.md` (v1 state) and `docs/measurement-refactor.md`
 (v1's value-stream refactor, whose Measurement contract this design keeps
@@ -13,7 +23,7 @@ plan: with the LLVM dependency gone, every boundary of the tool is text
 implementation language has zero interop surface — and the design's
 central types are sum types, which Rust expresses natively. The v1
 `lib/PTX/` C++ code (~900 LOC) is kept as a **reference specification**
-for transcription, pinned by shared golden gates, not ported.
+for transcription, pinned by shared expected-output tests, not ported.
 
 This document is the execution plan: step by step, PR by PR, every PR
 with its tests and exit criteria. The checklist at the bottom is ticked
@@ -70,6 +80,9 @@ as PRs land.
    kernel node, never to loops — the schema enforces the granularity;
    and every value prints its provenance (`[static]`, `[ptxas -v]`,
    `[ncu: file.csv]`) so a bound is never mistaken for a measurement.
+   Phase 1 ships only the requested column — *with* its `[static]`
+   label, because the labeling is what keeps a lone static number
+   honest; the SASS and NCU columns are Phase 2 items.
 4. **Launch config and architecture are inputs.** `--arch`, `--launch`,
    `--bind` are required for numeric output; symbolic output never blocks
    on them. Scope normalization (per-thread/warp/CTA → per-CTA/launch) is
@@ -90,7 +103,7 @@ item means editing this list in the same PR that implements it:
 - branch-probability modeling — conditional blocks carry `≤` bounds
   (PR 09), never probabilities;
 - SCEV-equivalent generality — trip counts come from a fixed shape
-  catalog, grown demand-driven via the coverage floors (§3);
+  catalog, grown demand-driven via the minimum-coverage thresholds (§3);
 - symbolic series for triangular nests — a note, never a solver;
 - guard-implication analysis for loop versioning — variants are
   reported side by side (PR 11), never auto-resolved;
@@ -108,16 +121,19 @@ item means editing this list in the same PR that implements it:
   core types (`OpClass`, `Measurement`, `SymExpr`, the affine domain) are
   enums dispatched by pattern matching, with `#[non_exhaustive]` nowhere
   in our own analysis types (exhaustiveness IS the feature).
-- **Dependency policy** (allowlist; anything else is justified in its PR):
-  `clap` (CLI), `serde`/`serde_json`/`toml`/`csv` (all
-  structured I/O), `cpp_demangle` (kernel names), `thiserror` (lib
-  errors), `anyhow` (bin only). Dev/tooling: `insta` (unit-level
-  snapshots), `proptest` (SymExpr properties; lands with PR 10),
-  `cargo-llvm-cov` (coverage), `cargo-fuzz` (PR 21; needs nightly, so
-  it lives in non-blocking T4 — the stable pin holds for PR-blocking CI).
+- **Dependency policy** (allowlist; anything else is justified in its
+  PR; each dependency joins `Cargo.toml` at the PR that first uses it).
+  Phase 1 runtime: `clap` (CLI), `serde`/`serde_json` (the result tree
+  derives `Serialize`; JSON output *is* that derivation), `toml`
+  (machine tables), `cpp_demangle` (kernel names), `thiserror` (lib
+  errors), `anyhow` (bin only). Phase 1 dev/tooling: `insta`
+  (unit-level snapshots), `cargo-llvm-cov` (coverage). Reserved for
+  Phase 2 items: `csv` (NCU import), `proptest` (SymExpr properties),
+  `cargo-fuzz` (needs nightly, so fuzzing stays outside PR-blocking
+  CI — the stable pin holds).
   Deliberately NOT used: YAML anywhere (`serde_yaml` is archived/
   unmaintained since 2024 and its forks are worse; every config surface —
-  check rules, acceptance manifest, machine tables — is TOML, which the
+  check rules, the scenario status file, machine tables — is TOML, which the
   Python runner also reads dependency-free via stdlib `tomllib`),
   `petgraph`/graph crates (the CFG uses index
   arenas and hand-rolled textbook algorithms — ~300 LOC we want full
@@ -145,33 +161,39 @@ item means editing this list in the same PR that implements it:
   never leak into user-facing output. The AST/interner own their
   strings (PTX inputs are ≤ a few MB; no lifetime threading).
 - **Error policy**: the library never panics on malformed input — all
-  frontend paths return `Result`; the fuzz gate (PR 21) enforces this.
+  frontend paths return `Result`; a Phase 2 fuzz pass enforces this
+  mechanically, until then it is a review rule backed by error-path
+  unit tests.
   Per the honesty principle below, recoverable analysis failures are not
   errors; they are *named unknowns* in the result.
 - **Build/test**: cargo only. `ci.sh` = `cargo fmt --check`, `cargo
-  clippy -- -D warnings`, `cargo test`, then `python3 tests/golden/run.py`
-  (golden + acceptance tiers). The Python runner is kept deliberately —
-  it is implementation-language-neutral, so the acceptance suite would
-  survive even another rewrite. FileCheck is NOT used.
-- **CLI**: one binary `ptxroof` (thin `main.rs` over the library crate),
-  subcommands `analyze | diff | check | annotate | capabilities`. JSON
-  output (`--json`)
-  from PR 12 onward; text and JSON are views over the same result struct
-  (`serde::Serialize` on the result tree is the JSON emitter).
+  clippy -- -D warnings`, `cargo test`, then `python3 tests/run.py`
+  (the CLI-test and acceptance tiers). The Python runner is kept
+  deliberately — it is implementation-language-neutral, so the
+  acceptance suite would survive even another rewrite. FileCheck itself
+  is NOT used (the runner's CHECK lines borrow only its matching
+  semantics).
+- **CLI**: one binary `ptxroof` (thin `main.rs` over the library
+  crate). Phase 1 ships one verb: `analyze`, with JSON output (`--json`)
+  from PR 12 onward — text and JSON are views over the same result
+  struct. Further verbs (`diff`, `check`, `annotate`, `capabilities`)
+  are Phase 2 items; the clap subcommand enum makes each an additive
+  change.
 - **Honesty principle** (inherited from v1): every analysis either
   succeeds verifiably or degrades to a *named, visible* unknown. No
   silent zero-measurement paths — the v1 `AsyncCopy{bytes unset} → 0
   measurements` bug class is structurally outlawed: every dropped or
   unquantifiable item increments a reported counter with a reason.
 - **PR conventions**: each PR lands green (`./ci.sh`), ticks its
-  checklist entry here, and updates the acceptance manifest if it flips a
-  scenario. Target size 150–600 LOC excluding fixtures.
+  checklist entry here, and updates the scenario status file
+  (`status.toml`) if it changes a scenario's status. Target size 150–600
+  LOC excluding fixtures.
 - **Review protocol (artifact-only)**: the human review surface of a PR
-  is its *data diffs* — manifest flips, coverage-floor deltas,
-  classification-table/allowlist diffs, golden diffs — never the code.
-  Complement: a PR that claims to be a refactor must show a **zero
-  golden delta**, which is a machine-checked proof of behavior
-  preservation. This is the honesty principle applied to the project
+  is its *data diffs* — scenario-status changes (xfail → pass),
+  minimum-coverage raises, classification-table/allowlist diffs,
+  expected-output diffs — never the code. Complement: a PR that claims
+  to be a refactor must show **zero expected-output changes**, which is
+  a machine-checked proof of behavior preservation. This is the honesty principle applied to the project
   itself: every capability gained or lacking must be visible in a
   derived, diffable artifact; anything reviewable only by reading code
   gets restructured until it isn't.
@@ -189,82 +211,91 @@ integration tests live in `tests/*.rs`. Where a structure is easier to
 review as a snapshot (AST dumps, loop trees), use `insta` — snapshot
 review is `cargo insta review`, and snapshots are committed.
 
-**T2 — golden (Python runner).** Run the `ptxroof` binary on committed
-fixtures, assert on output. Two assertion forms:
-- `expected.json` — **subset matcher**: only asserted fields are compared
-  (additions never break goldens; behavioral changes always do).
-- `expected.greps` — ordered substring assertions on the text report, for
-  human-facing lines (verdicts, warnings).
+**T2 — CLI tests (Python runner).** Run the built `ptxroof` binary on
+committed inputs, compare against committed expected outputs. Two forms:
+- `expected.json` — **partial comparison**: only the fields present in
+  the expected file are compared (new report fields never break old
+  tests; behavioral changes always do).
+- `expected.checks` — **CHECK lines**: substrings that must appear in
+  the text report in order — the matching semantics of LLVM FileCheck's
+  `CHECK:` directives — for human-facing lines (verdicts, warnings).
 
-**T3 — acceptance (the five scenarios).** Committed up front in PR 02 as
-an executable spec, tracked in `tests/acceptance/manifest.toml` with
-status `xfail` or `pass`. The runner enforces both directions: an `xfail`
-test that passes is an error (forces the flip), a `pass` test that fails
-blocks the PR. Development progress *is* the sequence of xfail→pass flips.
+**T3 — acceptance scenarios.** Tracked in
+`tests/acceptance/status.toml` with status `xfail` ("expected failure",
+the LLVM lit / pytest term) or `pass`. S1 is committed in PR 02 as an
+executable spec; S2–S5 (designed in §4) are committed with the Phase 2
+items that implement them — a scenario def lands when its work starts,
+not before. The runner enforces both directions: an `xfail` test that
+passes is an error (forces the status change), a `pass` test that fails
+blocks the PR. Development progress *is* the sequence of xfail→pass
+status changes in that file.
 
-**T4 — live matrix (scheduled, non-blocking; PR 21).** Recompiles the
+**T4 — live matrix (scheduled, non-blocking; Phase 2).** Recompiles the
 fixture sources with whatever toolchains are present (host nvcc 13.2,
 clang/LLVM trunk), runs relaxed invariant rules (the `check` DSL with
 tolerant bounds), runs the v1↔v2 differential harness, and runs the
 cargo-fuzz targets for a fixed wall-clock budget. Catches toolchain
 drift; never blocks a PR.
 
-**Coverage floors (cross-cutting).** The analyzer emits per-run coverage
-stats in the result JSON — % of instructions classified non-Unknown, %
-of loops with resolved trip counts, % of global accesses with a known
-pattern. The golden runner aggregates these across the whole corpus and
-enforces floors recorded in `tests/acceptance/manifest.toml`; each floor
-activates at the PR that lands its analysis (classification at PR 08,
-trip counts at PR 11, access patterns at PR 17). This makes "useful in
-the majority of cases" a tested number rather than an aspiration, and
-it closes the demand-driven maintenance loop: when a future toolchain
-changes an idiom, the regen diff shows the floor metric dropping and
-names exactly which new shape has earned a place in the catalog —
-before any user files a bug. Floors are **ratchets**: after each PR the
-floor auto-rises to the achieved value (visible as a manifest diff), so
-corpus coverage can only go up — a regression is a CI failure, never
-something a human must notice.
+**Minimum-coverage thresholds (cross-cutting).** The analyzer emits
+per-run coverage stats in the result JSON — % of instructions classified
+non-Unknown, % of loops with resolved trip counts, % of global accesses
+with a known pattern. The test runner aggregates these across the whole
+corpus and enforces the minimums recorded in
+`tests/acceptance/status.toml`; each minimum becomes enforced at the PR
+that lands its analysis (classification at PR 08, trip counts at PR 11;
+Phase 2 analyses add their own, e.g. access patterns). This makes
+"useful in the majority of cases"
+a tested number rather than an aspiration, and it closes the
+demand-driven maintenance loop: when a future toolchain changes an
+idiom, the regen diff shows the coverage metric dropping and names
+exactly which new shape has earned a place in the catalog — before any
+user files a bug. Minimums **may only rise**: after each PR the runner
+records the achieved value as the new minimum (`--raise-min`, visible
+as a status.toml diff), so corpus coverage can only go up — a
+regression is a CI failure, never something a human must notice.
 
-**Conservation gates (cross-cutting).** The runner enforces accounting
-identities on every fixture's `--json` output — no fixture-specific
-expectations, no human review: `classified + allowlisted-unknown =
-total instructions` (every instruction accounted exactly once — the
-check v1's AsyncCopy silent-zero bug would have failed); `Σ per-block =
-kernel totals`; `per-loop per-iteration × trip expr = flat count`
-whenever trips are fully bound; every Measurement's provenance index
-resolves to a real instruction. Each identity registers as its analysis
-lands (PR 08, 09, 12). This is the mechanism that catches
-*implementation inconsistency* — two code paths that disagree — without
-anyone reading the code.
+**Report verifier (cross-cutting).** In the spirit of LLVM's IR
+verifier — invariants any correct implementation must satisfy, checked
+mechanically — the runner enforces accounting identities on every
+fixture's `--json` output, with no fixture-specific expectations and no
+human review: `classified + allowlisted-unknown = total instructions`
+(every instruction accounted exactly once — the check v1's AsyncCopy
+silent-zero bug would have failed); `Σ per-block = kernel totals`;
+`per-loop per-iteration × trip expr = flat count` whenever trips are
+fully bound; every Measurement's provenance index resolves to a real
+instruction. Each check registers as its analysis lands (PR 08, 09,
+12). This is the mechanism that catches *implementation inconsistency*
+— two code paths that disagree — without anyone reading the code.
 
 **Fixture policy.**
 - Every fixture has a provenance header (source file + git rev, compiler
   version string, exact flags, date) and a `regen.sh`. Regeneration is a
   reviewable event: when a toolkit upgrade changes fixture content, that
   diff is information, not noise.
-- **Doctored fixtures are first-class.** PTX/SASS are text; negative
+- **Hand-edited fixtures are first-class.** PTX/SASS are text; negative
   cases are manufactured by hand-editing committed copies (strip `.loc`,
   swap `mma.sync` for `fma.rn` sequences, perturb a stride constant,
-  inject `STL`/`LDL` lines into SASS). Doctored files carry a
-  `// DOCTORED:` header stating base fixture and edit.
-- **Transcription fidelity gate.** PRs 03/04/08 transcribe the v1 C++
+  inject `STL`/`LDL` lines into SASS). Hand-edited files carry a
+  `// HAND-EDITED:` header stating base fixture and edit.
+- **Transcription fidelity.** PRs 03/04/08 transcribe the v1 C++
   lexer/parser/classifier. The C++ files are the reference spec; the
-  corpus-wide gates (lex-all, parse-all, classify-all) plus the v1
-  differential (PR 21) pin the transcription. The C++ reference is not
-  deleted until PR 22.
+  corpus-wide checks (lex-all, parse-all, classify-all) plus the v1
+  differential (Phase 2) pin the transcription. The C++ reference is
+  not deleted until the Phase 2 switchover.
 - Environment pins for initial generation (recorded per fixture):
-  CUDA 13.2 (`V13.2.78`), ptxas/nvdisasm/cuobjdump from same, clang
-  against local LLVM trunk, Triton 3.5.1, GPU RTX 4090 (sm_89) for NCU
-  captures. PTX/SASS fixtures target sm_80 and sm_90 (cross-compilation
-  needs no matching GPU; only NCU capture runs on the 4090).
+  CUDA 13.2 (`V13.2.78`), fixtures target sm_80 (cross-compilation
+  needs no matching GPU). Phase 2 producers carry their own verified
+  pins: clang against local LLVM trunk, Triton 3.5.1, ptxas/nvdisasm/
+  cuobjdump from CUDA 13.2, RTX 4090 (sm_89) for NCU captures.
 - **Template instantiation**: the ladder kernels (k5/k11/k12/k14) are
   C++ templates; each fixture wrapper `.cu` explicitly instantiates one
   configuration, recorded in provenance. (Verified: including the bare
   header yields PTX with no kernel body at all.)
-- **PTX ISA version span is deliberate**: nvcc 13.2 emits
-  `.version 9.2`, clang trunk `.version 8.8`, Triton 3.5.1
-  `.version 8.7` (all verified locally). The frontend corpus gates run
-  across all three producers.
+- **PTX ISA version span is known**: nvcc 13.2 emits `.version 9.2`
+  (the Phase 1 corpus), clang trunk `.version 8.8`, Triton 3.5.1
+  `.version 8.7` (all verified locally). The clang and Triton producers
+  join the corpus-wide checks with their Phase 2 item.
 - **Official references**: the PTX ISA manual and CUDA Binary Utilities
   doc are fetched by `tools/fetch-manuals.sh` into an untracked `refs/`
   directory (NVIDIA copyright — cite, don't commit). Grammar and
@@ -272,18 +303,22 @@ anyone reading the code.
   local experiments on 2026-06-12; load-bearing ones carry "verified"
   notes.
 
-## 4. Acceptance suite (the five scenarios)
+## 4. Acceptance scenarios
 
-| ID | Scenario | Fixtures | Key assertions | Flips at |
-|----|----------|----------|----------------|----------|
-| S1 | Blocktiling design verification | `k5` (= `test/5_2d_blocktiling.cuh`) sm_80 PTX | nested loop tree w/ source lines; trips `K/8`; unroll detected; per-iter flops/bytes; AI(global)=32.0; per-arch knee verdicts (sm_80 compute-bound, sm_86 memory-bound) | PR 13 |
-| S2 | Spill regression diff | `k12` PTX + two SASS builds of the *same* PTX: default vs `ptxas --maxrregcount=32` (real spills, not doctored) | static columns identical; SASS column: reg + spill-bytes delta; per-loop attribution of `STL`/`LDL` | PR 15 |
-| S3 | Precision/pipe audit | `k2` (= `test/2_coalesced.cuh`) sm_80 PTX | pipe table: f32 cuda-core only, 0 f16; `cvt` overhead counted; load A uniform/broadcast, load B coalesced @ 2 B width w/ transaction note | PR 17 |
-| S4 | Black-box Triton kernel | Triton 3.5.1 matmul w/ one strided operand (generator script committed), no-`.loc` doctored variant | parses; structural loop naming without `.loc`; trips honestly `unknown`; strided access flagged with stride expr | PR 17 |
-| S5 | CI check / toolchain regression | `k14` (= `test/14_ldmatrix_mma.cuh`) sm_90 PTX + doctored copy with `mma.sync` removed + `rules.toml` | original passes; doctored fails exit-code 1 with message naming loop + `tensor_flops_per_iter: got 0` | PR 18 |
+S1 is Phase 1's goal. S2–S5 are fully designed (and their key claims
+verified against real fixtures) but land with their Phase 2 items —
+the rows stay here as the spec they'll be built to.
 
-Table values are design intent; goldens are authored from fixture
-reality at PR 02. Verified against real nvcc 13.2 output so far: k2's
+| ID | Scenario | Fixtures | Key assertions | Lands |
+|----|----------|----------|----------------|-------|
+| S1 | Blocktiling design verification | `k5` (= `test/5_2d_blocktiling.cuh`) sm_80 PTX | nested loop tree w/ source lines; trips `K/8`; unroll detected; per-iter flops/bytes; AI(global)=32.0; per-arch knee verdicts (sm_80 compute-bound, sm_86 memory-bound) | PR 13 (Phase 1) |
+| S2 | Spill regression diff | `k12` PTX + two SASS builds of the *same* PTX: default vs `ptxas --maxrregcount=32` (real spills, not hand-edited) | static columns identical; SASS column: reg + spill-bytes delta; per-loop attribution of `STL`/`LDL` | Phase 2: `diff` + SASS |
+| S3 | Precision/pipe audit | `k2` (= `test/2_coalesced.cuh`) sm_80 PTX | pipe table: f32 cuda-core only, 0 f16; `cvt` overhead counted; load A uniform/broadcast, load B coalesced @ 2 B width w/ transaction note | Phase 2: coalescing |
+| S4 | Black-box Triton kernel | Triton 3.5.1 matmul w/ one strided operand (generator script committed), no-`.loc` hand-edited variant | parses; structural loop naming without `.loc`; trips honestly `unknown`; strided access flagged with stride expr | Phase 2: coalescing + Triton |
+| S5 | CI check / toolchain regression | `k14` (= `test/14_ldmatrix_mma.cuh`) sm_90 PTX + hand-edited copy with `mma.sync` removed + `rules.toml` | original passes; the edited copy fails exit-code 1 with message naming loop + `tensor_flops_per_iter: got 0` | Phase 2: `check` |
+
+Table values are design intent; expected outputs are authored from
+fixture reality at PR 02. Verified against real nvcc 13.2 output so far: k2's
 K-loop is unrolled ×4 with a `.pragma "nounroll"` remainder loop, so S3
 sees main-loop trips `(K − K mod 4)/4` (4 `fma` + 8 `cvt` + 8 loads per
 iteration) plus a remainder loop trips `K mod 4` — not a single
@@ -299,95 +334,93 @@ output.
 
 ## 5. Repository layout
 
+Phase 1 only — Phase 2 items add their own surface when they land
+(src/affine/, src/sass.rs, src/ncu.rs, src/check.rs, src/diff.rs,
+report/html.rs, fuzz/, data/ptx_opcodes_*.txt, tools/extract-opcodes.py,
+tools/triton_fixture.py).
+
 ```
 v2/
 ├── PLAN.md                  # this file; checklist ticked per PR
 ├── Cargo.toml               # lib `ptxroof` + bin `ptxroof`
 ├── rust-toolchain.toml
-├── ci.sh                    # fmt, clippy -D warnings, test, golden runner
+├── ci.sh                    # fmt, clippy -D warnings, test, CLI test runner
 ├── src/
 │   ├── main.rs              # thin: clap dispatch into the library
 │   ├── lib.rs
 │   ├── core/                # flat IR: Module/Kernel/Block/Instr + operand
 │   │                        #   arena, interner/Symbol, newtype ids, SourceLoc,
-│   │                        #   SymExpr, Measurement, Result tree (Serialize)
+│   │                        #   SymExpr, Measurement, result tree (Serialize)
 │   ├── parse/               # lexer.rs, ast.rs, parser.rs (transcribed from lib/PTX)
 │   ├── cfg/                 # graph.rs (index arenas), dominators.rs, loops.rs,
-│   │                        #   identity.rs (stable IDs, demangling)
+│   │                        #   naming.rs (display names, demangling)
 │   ├── classify.rs          # instruction → semantic record (enum, exhaustive match)
-│   ├── affine/              # eval.rs, trips.rs, coalesce.rs
+│   ├── trips.rs             # trip-count matcher + scalar affine tracer
 │   ├── machine.rs           # loader for data/machine/*.toml
-│   ├── sass.rs              # nvdisasm / resource-usage readers, line join
-│   ├── ncu.rs               # CSV import, three-column join
-│   ├── report/              # collect.rs, stats.rs, text.rs, html.rs
-│   ├── check.rs             # rules TOML engine (`toml` crate)
-│   └── diff.rs              # per-loop delta on stable IDs
+│   └── report/              # collect.rs, stats.rs, text.rs (JSON = Serialize)
 ├── data/machine/            # per-SM peak/BW tables (TOML, sources cited inline)
-├── data/ptx_opcodes_*.txt   # canonical instruction inventory per ISA version (PR 02)
-├── fuzz/                    # cargo-fuzz targets (PR 21): fuzz_lexer, fuzz_parser
 ├── tests/                   # cargo integration tests (*.rs) — and, as plain data:
-│   ├── fixtures/<name>/     # {src ref, *.ptx, *.sass, *.csv, regen.sh, DOCTORED}
-│   ├── golden/              # run.py + per-case expected.json / expected.greps
-│   └── acceptance/          # manifest.toml + scenario test defs (S1–S5)
+│   ├── run.py               # CLI test runner (T2 + T3)
+│   ├── fixtures/<name>/     # {src ref, *.ptx, regen.sh, HAND-EDITED}
+│   ├── cli/<case>/          # CLI tests: case.toml + expected.json / expected.checks
+│   └── acceptance/          # status.toml + scenario test defs
 └── tools/
     ├── regen-fixtures.sh    # drives all fixture regen.sh, container-pinnable
-    ├── extract-opcodes.py   # ISA manual → data/ptx_opcodes_*.txt inventory
-    └── triton_fixture.py    # Triton kernel generator for S4
+    └── fetch-manuals.sh     # PTX ISA manual → untracked refs/ (cite, don't commit)
 ```
 
 ---
 
-## 6. The PR train
+## 6. The PR sequence
 
-Each PR: **Goal / Contents / Tests / Done when**. Phases group PRs;
-scenario flips are marked ★.
+Each PR: **Goal / Contents / Tests / Done when**. ★ marks the PR where
+a scenario's status changes from xfail to pass.
 
-### Phase 0 — Foundations
+### Phase 1 — the minimal useful analyzer (PRs 01–13)
 
-**PR 01 — Scaffold and test harness.** (~200 LOC)
+Goal: S1 end to end — `ptxroof analyze` on nvcc PTX produces a named
+loop tree with per-iteration flops/bytes/AI, honest named unknowns, and
+per-arch roofline verdicts. Every PR is on the critical path; nothing
+outside this list is built until Phase 1 ships.
+
+#### Foundations
+
+**PR 01 — Scaffold and test harness.** (~500 LOC as built)
 - Contents: cargo package (lib + bin), `rust-toolchain.toml`, `ci.sh`
-  (fmt --check, clippy -D warnings, test, golden runner); `clap` skeleton
-  with the five subcommands stubbed; `tests/golden/run.py` with the
-  JSON-subset matcher, greps, xfail-manifest support, the
-  coverage-floor mechanism (reads floors from the acceptance manifest;
-  each floor activates when its analysis lands, then ratchets — §3),
-  and the conservation-gate hook (the §3 accounting identities, run on
-  every fixture's JSON; identities register as their analyses land) —
-  all tested against the stub binary.
-- Tests: one trivial unit test; runner self-tests (subset matcher
+  (fmt --check, clippy -D warnings, test --locked, CLI test runner);
+  `clap` skeleton with the `analyze` verb stubbed; `tests/run.py`
+  with partial JSON comparison (only fields present in `expected.json`
+  are compared), CHECK lines (ordered substring matching, FileCheck
+  semantics), scenario-status support (pass | xfail, both directions
+  enforced), the minimum-coverage mechanism (reads minimums from
+  `status.toml`; each becomes enforced when its analysis lands, then
+  may only rise — §3), and the report-verifier hook (the §3 accounting
+  identities, run on every JSON report; checks register as their
+  analyses land) — all tested against the stub binary.
+- Tests: one trivial unit test; runner self-tests (partial-comparison
   semantics: missing field fails, extra field passes; xfail-that-passes
   errors); clippy clean.
 - Done when: `./ci.sh` green from a clean checkout with only rustup +
-  python3 ≥ 3.11 (stdlib `tomllib` reads the manifest — the runner has
+  python3 ≥ 3.11 (stdlib `tomllib` reads `status.toml` — the runner has
   zero third-party deps) — no CUDA, no LLVM, no C++ toolchain.
 
-**PR 02 — Fixture corpus + acceptance spec.** (scripts ~150 LOC + fixtures)
+**PR 02 — nvcc fixture corpus + S1 spec.** (scripts ~100 LOC + fixtures)
 - Contents (language-neutral): `regen.sh` per fixture with provenance
   headers and explicit template-instantiation wrapper `.cu` files;
-  committed PTX for `k1, k2, k5, k11, k12, k14` at sm_80/sm_90 (nvcc
-  13.2 `-ptx -lineinfo`, plus clang-trunk variants — verified working
-  against the CUDA 13.2 headers with only a `-Wunknown-cuda-version`
-  warning); `tools/triton_fixture.py` + committed Triton PTX (verified:
-  Triton 3.5.1 + torch 2.9.1 on the 4090 produces PTX with `cp.async` +
-  `mma.sync` idioms, param `.ptr .global` attributes, and `.loc` mapping
-  to the *Python* source); `tools/fetch-manuals.sh` +
-  `tools/extract-opcodes.py` → `data/ptx_opcodes_<ver>.txt`, the
-  **canonical instruction inventory** per ISA version, derived from the
-  manual's instruction-set chapters and committed with provenance — a
-  future PTX-version bump becomes a one-screen list diff naming every
-  new instruction, each of which must then be assigned a bucket (PR 08's
-  cross-check enforces this); hand-written micro
-  fixtures (`micro/` — single-loop, branchy, irreducible, no-loc);
-  S1–S5 acceptance defs, all `xfail` in `manifest.toml`, plus the
-  coverage-floor table (entries inactive until their analyses land).
-- Tests: fixture lint (a runner check): every fixture has provenance
-  header + regen.sh; manifest loads; opcode inventory non-empty and
-  regenerates to a no-op diff; all five scenarios runnable-and-
-  xfailing against the stub.
-- Done when: corpus committed, regen reproducible (`regen.sh` rerun is a
-  no-op diff modulo date), S1–S5 visible as xfail in the runner output.
+  committed sm_80 PTX for `k1`, `k2`, `k5` (nvcc 13.2 `-ptx
+  -lineinfo`); hand-written micro fixtures (`micro/` — single-loop,
+  branchy, irreducible, no-loc); `tools/fetch-manuals.sh` (PTX ISA
+  manual into untracked `refs/` — the grammar reference PRs 03–04
+  transcribe against); the S1 acceptance def, `xfail` in `status.toml`,
+  plus the classification and trip-count min_coverage entries
+  (unenforced until PR 08/11).
+- Tests: fixture lint (a runner check): every fixture has a provenance
+  header + regen.sh; the status file loads; S1 runnable-and-xfailing
+  against the stub.
+- Done when: corpus committed, regen reproducible (`regen.sh` rerun is
+  a no-op diff modulo date), S1 visible as xfail in the runner output.
 
-### Phase 1 — Frontend
+#### Frontend
 
 **PR 03 — Lexer.** (~350 LOC; transcription of `lib/PTX/Tokenizer.cpp`)
 - Contents: hand-rolled lexer (no lexer-generator dep) extended for full
@@ -401,16 +434,14 @@ scenario flips are marked ★.
   constant), labels, predicates (`@%p`, `@!%p`). Token carries byte-span
   into the owned source buffer.
 - Tests: T1 table-driven token cases (each token kind; the `::` and
-  bit-pattern-float cases pinned); T2 gate: *every* fixture lexes with
-  zero error tokens.
-- Done when: lex-all-fixtures gate green.
+  bit-pattern-float cases pinned); corpus-wide T2 check: *every* fixture
+  lexes with zero error tokens.
+- Done when: the lex-all-fixtures check is green.
 
 **PR 04 — Parser → Module AST.** (~500 LOC; transcription of
 `lib/PTX/Parser.cpp`, extended to full programs)
 - Contents: recursive descent: module directives, kernel signatures +
-  param tables (name/type/offset, **including pointer attributes**
-  `.ptr .global .align N` — Triton emits these and they carry free
-  state-space facts), `.reg` decls, `.extern .shared .b8 name[]`
+  param tables (name/type/offset), `.reg` decls, `.extern .shared .b8 name[]`
   (dynamic smem, empty brackets), body statements (mnemonic + modifier
   list + operands), `{ … }` statement blocks (inline-asm expansions and
   scoped `.reg` decls — verified present in the very first nvcc
@@ -429,13 +460,13 @@ scenario flips are marked ★.
 - Tests: T1 snippet units incl. error recovery, plus interner units
   (idempotent intern, resolve round-trip); `insta` snapshots of the
   AST for two micro fixtures — snapshots go through the dumper, so
-  goldens stay readable, no raw indices; T2: parse-all-fixtures gate
+  they stay readable, no raw indices; T2: parse-all-fixtures check
   (zero `Unparsed` statements, or listed in `parse-allowlist.txt`);
   dump→reparse→dump idempotence on all fixtures.
-- Done when: both gates green; param tables for `k2`/`k5` match the known
-  signatures in golden files.
+- Done when: both corpus checks green; param tables for `k2`/`k5` match
+  the committed expected outputs.
 
-### Phase 2 — Structure
+#### Structure
 
 **PR 05 — CFG.** (~250 LOC)
 - Contents: index-arena graph (`BlockId(u32)`, `Vec<Block>`); leaders/
@@ -446,7 +477,7 @@ scenario flips are marked ★.
 - Tests: T1 on `micro/` snippets (fallthrough into label, cond-branch
   diamond, brx table, unreachable block); T2: pinned block/edge counts
   per ladder fixture.
-- Done when: goldens pinned and green.
+- Done when: expected outputs pinned and green.
 
 **PR 06 — Dominators + loop forest.** (~300 LOC)
 - Contents: Cooper-Harvey-Kennedy dominators over the index arena; back
@@ -454,70 +485,55 @@ scenario flips are marked ★.
   flagged `unknown-multiplicity`, never guessed**. Hand-rolled (no graph
   crate) — we want line-item control of the irreducibility path.
 - Tests: T1 textbook graphs (incl. the classic irreducible two-entry
-  loop); T2: golden loop trees for the ladder (`k1`: 1 loop; `k5`: 2
+  loop); T2: expected loop trees for the ladder (`k1`: 1 loop; `k5`: 2
   nested @ known lines; `k12`: pipeline loop) and for `micro/irreducible`
   asserting the honest flag; `insta` snapshot of the `k5` loop tree.
-- Done when: ladder loop trees match goldens.
+- Done when: ladder loop trees match the committed expected outputs.
 
-**PR 07 — Identity and naming.** (~200 LOC)
-- Contents: stable loop IDs with resolution order source-line (`.loc`) →
-  structural path (`kernel/loop[i]/loop[j]`) → raw label; kernel-name
-  demangling via `cpp_demangle`; param-table printout (the `--bind` UX
-  foundation).
-- Tests: T1 ID resolution incl. ties; demangle cases for the ladder's
-  mangled names; T2: `k5` loops named by source line; doctored `k5-noloc`
-  falls back to structural path (this doctored fixture also serves S4's
-  no-`.loc` assertion later).
-- Done when: same logical loop gets the same ID across the
-  `k5`/`k5-noloc` pair (structural path agrees).
+**PR 07 — Loop naming.** (~150 LOC)
+- Contents: loop display names — source line (`.loc`) when present,
+  else the raw label; kernel-name demangling via `cpp_demangle`
+  (fallible by type — unmangled names pass through unchanged);
+  param-table printout (the `--bind` UX foundation). Stable structural
+  IDs for cross-build joins belong to Phase 2's `diff` item.
+- Tests: T1 naming incl. the no-`.loc` fallback; demangle cases for the
+  ladder's mangled names; T2: `k5` loops named by source line,
+  `micro/no-loc` loops named by label.
+- Done when: every loop in the Phase 1 corpus has a human-readable name.
 
-### Phase 3 — Semantics
+#### Semantics
 
-**PR 08 — Instruction classifier.** (~500 LOC; transcription + major
-extension of `lib/PTX/Classifier.cpp`)
-- Contents: `enum OpClass` with arms for {cuda-core flop, **SFU op**
-  (`rcp/sqrt/div/ex2/lg2/sin/cos` — distinct pipe with an explicit,
-  documented FLOP policy; the softmax fixture exercises it), tensor op,
-  non-flop arith (incl. `cvt` — 8 per main-loop iteration in k2, so it
-  materially affects instruction-mix reporting), memory, async-copy,
-  **atomic** (`atom`/`red`, counted load+store per v1 policy), sync,
-  control, ignore, unknown}, carrying {precision, packed-lanes, space,
-  direction, scope, bytes-or-unknown}; **`Space::Generic` for `ld`/`st`
-  with no state space** — PTX ISA: "If no state space is given, perform
-  the load using Generic Addressing" — reported as its own honest
-  bucket, refinable later via `cvta` provenance; `.shared` sub-qualifier
-  handling (`::cta` default per ISA, `::cluster` distinct); every
-  consumer dispatches by exhaustive `match`; `wmma` **role split by
-  first modifier** (load/store/mma — verified grammar in k11; fixes
-  v1's 8192-phantom-FLOP bug by construction); `mma/wgmma` shape tables
-  (verified: `mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32`);
-  `cp.async` with explicit size operand (bytes statically present —
-  verified in Triton output), `commit_group`/`wait_group` as sync arms,
-  bulk/TMA with optional bytes → *visible* unquantified counter;
-  predicated non-branch instructions get a `predicated` qualifier.
+**PR 08 — Instruction classifier.** (~400 LOC; transcription + extension
+of `lib/PTX/Classifier.cpp`)
+- Contents: `enum OpClass` with arms for what the Phase 1 corpus
+  contains: {cuda-core flop, non-flop arith (incl. `cvt` — 8 per
+  main-loop iteration in k2, so it materially affects instruction-mix
+  reporting), memory, sync, control, ignore, unknown}, carrying
+  {precision, packed-lanes, space, direction, scope, bytes-or-unknown};
+  **`Space::Generic` for `ld`/`st` with no state space** — PTX ISA: "If
+  no state space is given, perform the load using Generic Addressing" —
+  reported as its own honest bucket; `.shared` sub-qualifier handling
+  (`::cta` default per ISA, `::cluster` distinct); predicated non-branch
+  instructions get a `predicated` qualifier; every consumer dispatches
+  by exhaustive `match`, so each Phase 2 family (tensor, async-copy,
+  atomics, SFU) is an additive arm the compiler then forces every
+  dispatch site to handle.
 - Tests: T1 table-driven per family (one case per modifier axis that
-  changes the answer); the v1 wmma bug as a pinned regression test
-  (`wmma.load.*` ⇒ memory, 0 FLOPs); T1 **inventory cross-check**:
-  every mnemonic in the classifier tables and in
-  `classify-allowlist.txt` exists in the canonical inventory from
-  PR 02 — a typo'd table entry is a CI failure, not a match arm that
-  silently never fires — and the same join derives the three-way
-  partition (classified / unknown-by-policy with reason /
-  not-yet-handled) that PR 12's capability report renders; T2 **corpus
-  coverage gate**: every
-  instruction in every fixture classifies non-Unknown or appears in
+  changes the answer); T2 **corpus coverage check**: every instruction
+  in every fixture classifies non-Unknown or appears in
   `classify-allowlist.txt` — additions to the allowlist require review.
-  Classification coverage floor activates in the manifest; the
-  `classified + allowlisted-unknown = total` conservation gate registers.
-- Done when: coverage gate green over the full corpus incl. Triton
-  fixture.
+  The classification min_coverage entry becomes enforced in status.toml;
+  the `classified + allowlisted-unknown = total` verifier check
+  registers.
+- Done when: the coverage check is green over the Phase 1 corpus.
 
 **PR 09 — Measurement v2 + collection + Stats.** (~300 LOC)
-- Contents: `Measurement{kind, pipe, precision, scope, space, direction,
+- Contents: `Measurement{kind, precision, scope, space, direction,
   count: SymExpr(=const for now), provenance: instr index}` (serde-
-  derived); per-block collection; `Stats` filter queries (v1 design kept;
-  filters gain `pipe`); unquantified/unknown counters carried with
-  reasons. Execution counts carry an **`exact` vs `at_most` qualifier**:
+  derived); per-block collection; `Stats` filter queries (v1 design
+  kept); unquantified/unknown counters carried with reasons. (A `pipe`
+  axis — SFU/tensor vs cuda-core — joins with Phase 2's instruction
+  families.) Execution counts carry an **`exact` vs `at_most` qualifier**:
   a conditional block inside a loop body executes a data-dependent
   fraction of iterations, so its count is an upper bound, and every
   aggregate derived from it inherits the marker (rendered `≤` in
@@ -526,11 +542,12 @@ extension of `lib/PTX/Classifier.cpp`)
 - Tests: T1 Stats filter semantics (incl. the documented soft-filter
   rule) and qualifier propagation (conditional-in-loop block ⇒ `at_most`
   on every aggregate it touches; loop-only nesting stays `exact`); T2:
-  per-block flop/byte goldens for `k1`/`k2`; cross-check totals for `k2`
-  against hand-computed values in the golden file comment.
+  per-block flop/byte expected outputs for `k1`/`k2`; cross-check totals
+  for `k2` against hand-computed values kept as a comment in the
+  expected-output file.
 - Done when: `k2` per-block numbers match hand calculation.
 
-### Phase 4 — Symbolic counts → first useful report
+#### Symbolic counts → first useful report
 
 **PR 10 — SymExpr mini-library.** (~250 LOC)
 - Contents: `enum SymExpr` — symbols (params, opaque loop-trip symbols),
@@ -540,314 +557,253 @@ extension of `lib/PTX/Classifier.cpp`)
   the pure `c·Π(sym)` form from the first draft is provably too weak),
   scalar multiply, substitution/binding, ordered printing. Still
   deliberately not a CAS — exactly the forms the trip matcher emits.
-- Tests: T1 only — algebra, binding, printing stability, div edge cases;
-  plus `proptest` properties (the dev-dep lands here): for random
-  expressions and bindings, simplification/binding preserve the evaluated
-  value, and printing is deterministic — example-based tests under-cover
-  an algebraic domain.
-  Coverage measured with `cargo llvm-cov`; this module is small enough to
-  insist on 100% branch coverage.
+- Tests: T1 only — algebra, binding, printing stability, div edge
+  cases. Coverage measured with `cargo llvm-cov`; this module is small
+  enough to insist on 100% branch coverage. (`proptest` properties join
+  with Phase 2's self-auditing item.)
 - Done when: coverage target met; printing is deterministic.
 
-**PR 11 — Trip-count matcher.** (~400 LOC)
+**PR 11 — Trip-count matcher (nvcc shapes).** (~350 LOC)
 - Contents: per-loop: latch-condition extraction (`setp`+`@%p bra`),
   induction recognition (single in-loop def `add r, r, const`), and a
-  **scalar affine tracer** shared with PR 16 (lives in `affine/`):
-  real nvcc latches compare *derived* registers, not the IV — k2's main
-  loop exits on `setp.ne.s32 %p6, %r29, 0` where `%r29 = %r7 + %r35`,
-  `%r7 = (K&3) − K`, `%r35` is the IV — so the matcher must normalize
-  the latch condition as an affine expression of the IV and loop
-  invariants, tracing through `add/sub/and-mask/mul.wide/mad.lo/shl` to
-  `ld.param`/constants. Recognizes the **unroll main+remainder pair**
-  idiom as one logical loop (main `(K − K mod 4)/4`, remainder
-  `K mod 4`), reported linked. Result `SymExpr` or named opaque symbol
-  with reason. **Loop-variant detection, minimal form**: sibling loops
-  sharing a `.loc` source line are reported as variants — the unroll
-  main+remainder pair is the summable special case (linked); anything
-  else is flagged `variants — not summed` and excluded from kernel
-  totals. No guard-implication analysis (anti-scope): we surface the
-  ambiguity instead of resolving it. Per-register tracer state is a
-  dense `Vec` indexed by a `RegId` newtype — PTX declares counted
+  **scalar affine tracer** (lives with the matcher; Phase 2's affine
+  item extends it to addresses): real nvcc latches compare *derived*
+  registers, not the IV — k2's main loop exits on `setp.ne.s32 %p6,
+  %r29, 0` where `%r29 = %r7 + %r35`, `%r7 = (K&3) − K`, `%r35` is the
+  IV — so the matcher must normalize the latch condition as an affine
+  expression of the IV and loop invariants, tracing through
+  `add/sub/and-mask/mul.wide/mad.lo/shl` to `ld.param`/constants.
+  Recognized shapes — exactly what the Phase 1 corpus contains:
+  up-counting `i<N`/`i!=N` with constant stride, countdown, the
+  derived-register latch, and the **unroll main+remainder pair** linked
+  as one logical loop (main `(K − K mod 4)/4`, remainder `K mod 4`).
+  Anything else — multi-exit, data-dependent, pointer-induction
+  (clang/Triton's strength-reduced form, Phase 2), triangular —
+  degrades to a named opaque symbol with a reason. Sibling loops
+  sharing a `.loc` beyond the summable unroll pair are flagged
+  `variants — not summed` and excluded from kernel totals (no
+  guard-implication analysis: anti-scope). Per-register tracer state is
+  a dense `Vec` indexed by a `RegId` newtype — PTX declares counted
   register families (`.reg .b32 %r<38>;`, verified in k2), so state
   arena sizes come straight from the source; no string-keyed maps
   anywhere in the dataflow.
-- Tests: T1 on the canonical shapes, one fixture snippet each: rotated
-  do-while; `i<N`; `i!=N`; countdown; stride>1; 64-bit IV; derived-
-  register latch (the verified k2 shape above, pinned verbatim);
-  **pointer-induction latch** (`setp.lt.u64 %p, %ptr, %end` ⇒ trips
-  `(end − base)/stride` — clang/LLVM's common strength-reduced form, so
-  Triton output hits it); unroll main+remainder pair; multi-exit →
-  unknown; data-dependent → unknown; triangular (inner bound = outer
-  IV) → symbolic w/ note; doctored versioned-loop fixture (two cloned
-  loops, same `.loc`, mutually exclusive guards) → reported as
-  variants, totals exclude double-counting. T2: `k2` main loop trips
-  `(K − K mod 4)/4` with `K = param 2`, remainder `K mod 4`; `k5` outer
-  tile loop trips `K/8`; Triton fixture K-loop. Trip-count coverage
-  floor activates in the manifest.
-- Done when: ladder trip counts match goldens; every unknown carries a
-  reason string.
+- Tests: T1 on the recognized shapes plus the honest failures, one
+  fixture snippet each: rotated do-while; `i<N`; `i!=N`; countdown;
+  stride>1; 64-bit IV; derived-register latch (the verified k2 shape,
+  pinned verbatim); unroll main+remainder pair; multi-exit → unknown;
+  data-dependent → unknown. T2: `k2` main loop trips `(K − K mod 4)/4`
+  with `K = param 2`, remainder `K mod 4`; `k5` outer tile loop trips
+  `K/8`. The trip-count min_coverage entry becomes enforced in
+  status.toml.
+- Done when: ladder trip counts match the committed expected outputs;
+  every unknown carries a reason string.
 
-**PR 12 — `analyze` subcommand.** (~450 LOC)
+**PR 12 — `analyze` report.** (~350 LOC)
 - Contents: loop-tree report (text + JSON via `Serialize` on the result
   tree): per-loop per-iteration steady-state aggregation (Measurement
   counts × enclosing trip exprs, `≤`-rendering for `at_most` counts,
-  variant loops shown side by side and excluded from totals);
-  pipe/precision flop table, per-space byte table, unknown/unquantified
-  blocks with fix-it hooks; **source-line aggregation for straight-line
-  code** — recovers a per-source-iteration view when the compiler fully
-  unrolled a loop (every instruction carries the same `.loc`; verified
-  on k5's inner BK loop), the universal fallback whenever loop
-  structure was transformed away; **small-trip-count warning** when
-  bindings make a loop's trips small (boundary code dominates — the
-  steady-state headline is redirected); per-run coverage stats in the
-  result JSON (consumed by the runner's floors); a **ranked unknown
-  histogram** (per file or aggregated over a corpus, weighted by
-  symbolic execution count — an unknown at loop depth 2 outranks one in
-  the epilogue): the "what to add next" queue is data, not judgment,
-  and "your numbers look off on my kernel" triages mechanically;
-  `ptxroof capabilities` — the **derived capability report** (PR 08's
-  three-way partition + corpus coverage numbers), committed as a golden
-  so drift fails CI. The anti-STATUS.md rule: hand-maintained
-  capability docs rot (v1's did), so the only inventory of what the
-  tool handles is the one the tool generates; `--bind name=value` /
-  `--bind idx:name=value`, `--assume 'loop trips=expr'`, assumptions
-  echoed in report header; `--kernel` glob.
-- Tests: T2 goldens for `k2`, `k5` (symbolic and `--bind K=4096` numeric
-  columns); k5 unrolled-inner-loop line-aggregation golden; small-trips
-  warning golden (`--bind 2:K=8`); T1 for bind/assume parsing;
-  assumption-echo grep; capability-report and unknown-histogram goldens
-  (the committed capability report is itself a golden); the remaining
-  conservation gates register (Σ per-block = kernel; per-loop × bound
+  variant loops shown side by side and excluded from totals); precision
+  flop table, per-space byte table, unknown/unquantified blocks with
+  reasons; **source-line aggregation for straight-line code** —
+  recovers a per-source-iteration view when the compiler fully unrolled
+  a loop (every instruction carries the same `.loc`; verified on k5's
+  inner BK loop), the universal fallback whenever loop structure was
+  transformed away; per-run coverage stats in the result JSON (consumed
+  by the runner's minimum-coverage thresholds); `--bind name=value` /
+  `--bind idx:name=value` for numeric columns, bindings echoed in the
+  report header.
+- Tests: T2 expected outputs for `k2`, `k5` (symbolic and `--bind
+  K=4096` numeric columns); k5 unrolled-inner-loop line-aggregation
+  test; T1 for bind parsing; binding-echo CHECK line; the remaining
+  verifier checks register (Σ per-block = kernel; per-loop × bound
   trips = flat count); S1 partially satisfied but stays xfail (needs
   verdicts).
 - Done when: `k5` report shows the S1 numbers except roofline verdicts.
 
-### Phase 5 — Machine model
+#### Machine model
 
-**PR 13 — Machine model + normalization + verdicts. ★ S1 flips.** (~300 LOC)
+**PR 13 — Machine model + normalization + verdicts. ★ S1 → pass.** (~300 LOC)
 - Contents: `data/machine/*.toml` per-SM tables (sm_70/75/80/86/89/90:
-  peak FLOPs per pipe×precision, DRAM BW; sources cited in comments),
+  peak FLOPs per precision, DRAM BW; sources cited in comments),
   serde-loaded; knee computation; `--arch` + `--launch x,y,z` →
   per-CTA/per-launch normalization of mixed-scope measurements; verdict
   lines. **Defaults from the PTX itself where present**: `--arch` from
   the `.target` directive, launch dims from `.reqntid`/`.maxntid`
-  (verified: k11/k12/k14 carry `.maxntid` via `__launch_bounds__`);
+  when present (several ladder kernels carry `.maxntid` via
+  `__launch_bounds__`, verified);
   explicit flags override, and the report states which source was used.
+  Plus a minimal `README.md`: install (`cargo install --path`),
+  `analyze` usage, and the §1 audience boundary + anti-scope list
+  verbatim — users read the same honesty contract the code enforces.
 - Tests: T1 knee math vs hand-computed values from the cited specs; T1
-  scope normalization (per-warp byte × blockDim cases); T2: S1 golden
-  incl. the two-arch verdict pair (sm_80 compute-bound / sm_86
-  memory-bound at AI=32) — **S1 manifest flips to pass**.
-- Done when: S1 green; mixed-scope kernel (`k11`) normalizes without the
-  v1 flatten-by-32× error (pinned golden).
+  scope-normalization math (per-warp byte × blockDim cases — the v1
+  flatten-by-32× error class pinned at the unit level); T2: the S1
+  expected output incl. the two-arch verdict pair (sm_80 compute-bound /
+  sm_86 memory-bound at AI=32) — **S1's status changes to pass**.
+- Done when: S1 green; a newcomer can go from `git clone` to the `k5`
+  report using only the README. **Phase 1 ends here.**
 
-### Phase 6 — SASS sidecar
+### Phase 2 — the demand-driven backlog
 
-**PR 14 — SASS + resource readers.** (~350 LOC + fixtures)
-- Contents: `nvdisasm -g` reader — verified format: `//## File "…",
-  line N` comment lines interleaved with SASS in the code section
-  (leading `.debug_*` sections are raw bytes, skipped); `cuobjdump
-  --dump-resource-usage` reader (REG/STACK/SHARED — **verified: it
-  reports `LOCAL:0` even when spilling**; spills live in STACK, and
-  explicit spill-byte numbers exist only in `ptxas -v` output, so
-  `regen.sh` captures `ptxas -v` stderr as a committed `.res.txt`
-  alongside the SASS); spill counters from SASS (`LDL`/`STL` widths —
-  verified: 1326 in the forced-spill k5 build vs 0 default),
-  join-on-(kernel,line) → per-loop SASS metrics; fixtures: SASS twice
-  from the *same PTX* — default ptxas vs `--maxrregcount=32` (verified
-  on k5: 124 reg/0 spill → 32 reg/2772 B spill stores + 2560 B spill
-  loads) — plus a doctored injected-`STL` variant.
-- Tests: T1 reader units on committed SASS; doctored-injection test
-  (spill counter must move by exactly the injected bytes); T2: per-loop
-  spill attribution golden for the maxrregcount build.
-- Done when: spill bytes and register counts for both `k12` builds match
-  goldens; line join places ≥95% of SASS instructions into a loop
-  (remainder reported, not dropped).
+Nothing here is scheduled. An item starts only when its trigger fires;
+it then becomes a short PR sequence under the same conventions (tests,
+status.toml updates, expected outputs). Design details and locally
+verified facts from the planning sessions are kept with each item so
+the work starts warm — but no code, fixture, or CLI surface for any of
+them exists in the tree until then.
 
-**PR 15 — `diff` subcommand. ★ S2 flips.** (~300 LOC)
-- Contents: two analysis results → per-loop delta keyed on stable IDs
-  (PR 07); added/removed loops reported as such; `--kernel-map old=new`
-  for renames; text + JSON.
-- Tests: T1 ID-matching edge cases (loop added/removed/renamed); T2: S2
-  golden — `k12` default vs maxrregcount build: static columns
-  byte-identical, SASS column shows reg/spill delta — **S2 flips**;
-  doctored static-change diff (perturbed unroll fixture) as the inverse
-  case.
-- Done when: S2 green.
+**Tensor-core / async / atomic / SFU instruction families** (extends
+PR 08; brings fixtures `k11`, `k12`, `k14` at sm_80/sm_90). Trigger:
+the first tensor-core or async-pipeline kernel analyzed. OpClass arms
+for tensor ops with `wmma` **role split by first modifier**
+(load/store/mma — verified grammar in k11; lands with v1's
+8192-phantom-FLOP wmma bug as a pinned regression test: `wmma.load.*`
+⇒ memory, 0 FLOPs); `mma/wgmma` shape tables (verified:
+`mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32`, and
+`ldmatrix...x2.trans.shared.b16` in k14); `cp.async` with explicit
+size operand (verified statically present), `commit_group`/
+`wait_group` as sync arms, bulk/TMA with optional bytes → visible
+unquantified counter; atomics (`atom`/`red`, counted load+store per v1
+policy); the SFU pipe (`rcp/sqrt/div/ex2/lg2/sin/cos`) with an
+explicit, documented FLOP policy; a `pipe` axis on `Measurement`.
+Exhaustive `match` makes every new arm a compile-enforced extension.
 
-### Phase 7 — Affine analysis
+**Triton + clang producers** (extends PR 02/03/04/11). Trigger: the
+first non-nvcc kernel. `tools/triton_fixture.py` + committed Triton
+PTX (verified: Triton 3.5.1 + torch 2.9.1 emits `cp.async` +
+`mma.sync` idioms, param `.ptr .global` attributes — the parser grows
+pointer-attribute support here — and `.loc` mapping to the *Python*
+source); clang-trunk fixture variants (verified working against the
+CUDA 13.2 headers with only a `-Wunknown-cuda-version` warning); the
+**pointer-induction latch** trip shape (`setp.lt.u64 %p, %ptr, %end` ⇒
+trips `(end − base)/stride`, clang/LLVM's strength-reduced form);
+`.version` 8.7/8.8 join the corpus-wide checks.
 
-**PR 16 — Affine evaluator.** (~450 LOC)
-- Contents: extends PR 11's scalar tracer to memory addresses, with a
-  **three-tier domain** — this is a verified necessity, not a
-  refinement: in k2, A's address is `base + 2·(K·row + k)` where `K·row`
-  is a *product of two symbols* (param × ctaid/tid.y expression). A
-  two-tier affine-or-⊤ domain (the first draft) classifies that as
-  unknown; the correct answer is "uniform across the warp." Tiers:
-  1. **affine in lane-varying symbols** (`c₀ + Σ cᵢ·sᵢ`) — yields the
-     tid.x stride coefficient;
-  2. **lane-invariant, non-affine** — closed under arbitrary arithmetic
-     on lane-invariant inputs (param×param, K·row, …);
-  3. **⊤ unknown** (data-dependent, `add.cc/addc` carry chains, register
-     reuse across joins — all verified-or-ISA-documented forms).
-  Handled ops: `mov/add/sub/shl/mul.wide/mul.lo/mad.lo/and-mask/cvt/
-  ld.param` + sreg reads (all forms observed in the k2/k5 fixtures);
-  merge = equality else demote tier; loop bodies use PR 11's IV facts.
-- Tests: T1 snippet battery incl. the S3 pair as it actually appears in
-  k2's PTX (A: lane-invariant product → uniform; B: tid.x coeff 2 B) and
-  deliberate ⊤ cases (data-dependent index, carry-chain arithmetic,
-  register reuse across paths).
-- Done when: snippet battery green; evaluator never claims tier 1 or 2
-  for the ⊤ cases (asserted).
+**`diff` + SASS sidecar — S2.** Trigger: the first "did my change
+help?" comparison or spill-regression hunt. Stable structural loop IDs
+(`kernel/loop[i]/loop[j]`, extending PR 07 naming) so loops join
+across builds; `nvdisasm -g` reader (verified format: `//## File "…",
+line N` comment lines interleaved in the code section); `cuobjdump
+--dump-resource-usage` reader (verified: reports `LOCAL:0` even when
+spilling — explicit spill bytes exist only in `ptxas -v` stderr, so
+regen captures it as a committed `.res.txt`); `LDL`/`STL` spill
+counters from SASS (verified: 1326 in the forced-spill build vs 0
+default; k5: 124 reg/0 spill → `--maxrregcount=32` ⇒ 32 reg/2772 B
+spill stores + 2560 B spill loads — same PTX, real spills, not
+hand-edited); join-on-(kernel,line) → per-loop SASS metrics; the
+`diff` verb: per-loop delta on stable IDs, added/removed loops
+reported as such.
 
-**PR 17 — Coalescing classification. ★ S3, S4 flip.** (~250 LOC)
-- Contents: per global access: lane-stride coefficient ⇒ uniform /
-  coalesced / strided(w) / unknown; **lane decomposition is launch-
-  config-dependent** (PTX ISA: warps are consecutive linearized thread
-  IDs, x-major — when `ntid.x < 32` a warp spans multiple `tid.y`
-  values, so the lane coordinate is derived from `--launch` or the
-  kernel's `.reqntid`/`.maxntid`, and degrades to an honest unknown
-  without them); **32-byte-sector** estimate per warp access
-  (`min(32, max(1, ceil(32·coeff/32)))`, adjusted for vector width —
-  sectors, not 128 B transactions, matching NCU's accounting); report +
-  JSON wiring; `all_coalesced` summary fact (for PR 18's DSL).
-- Tests: T2: S3 golden on `k2` (A uniform, B coalesced @2 B with
-  transaction note; pipe table from PR 08/12 asserted in the same
-  scenario) — **S3 flips**; S4 golden on Triton fixture (strided flag w/
-  stride expr, structural naming, unknown trips) — **S4 flips**;
-  doctored stride-perturbed `k2` must flip B's verdict (mutation test);
-  access-pattern coverage floor activates in the manifest.
-- Done when: S3+S4 green; mutation test green; floor green.
+**Affine address analysis + coalescing — S3, S4.** Trigger: the first
+uncoalesced-access suspicion. Extends PR 11's scalar tracer to memory
+addresses with a **three-tier domain** (verified necessity in k2: A's
+address contains `K·row`, a product of two symbols — lane-invariant
+but non-affine, so a two-tier affine-or-⊤ domain wrongly reports
+unknown where the right answer is "uniform across the warp"):
+(1) affine in lane-varying symbols → the tid.x stride coefficient;
+(2) lane-invariant non-affine; (3) ⊤ unknown (data-dependent, carry
+chains, register reuse across joins). Lane decomposition is
+launch-config-dependent (warps are consecutive linearized thread IDs,
+x-major — derived from `--launch` or `.reqntid`/`.maxntid`, else an
+honest unknown); 32-byte-sector estimates per warp access (sectors,
+not 128 B transactions, matching NCU's accounting);
+uniform/coalesced/strided(w)/unknown verdicts; the access-pattern
+min_coverage entry; `all_coalesced` summary fact.
 
-### Phase 8 — Check, NCU, annotate
+**`check` verb — S5.** Trigger: the first CI gate on a kernel. Rules
+TOML (the `toml` crate already on the allowlist): kernel/loop
+selectors by stable ID, numeric comparators over Stats metrics,
+instruction-class exists/absent; exit 0/1/2 = pass/fail/usage-error;
+failure messages name loop, metric, expected vs got.
 
-**PR 18 — `check` subcommand. ★ S5 flips.** (~300 LOC)
-- Contents: rules TOML via the `toml` crate already on the allowlist —
-  no YAML, see §2 (kernel/loop selectors by stable
-  ID; numeric comparators over any Stats metric; `all_coalesced`;
-  instruction-class exists/absent); exit codes 0/1/2
-  (pass/fail/usage-error); failure messages name loop, metric, expected
-  vs got.
-- Tests: T1 evaluator per assertion type incl. threshold boundaries; T2:
-  S5 — `k14` passes, doctored mma-removed copy fails exit 1 with pinned
-  message — **S5 flips**; rules-file error cases (unknown loop ID names
-  candidates, exit 2; malformed TOML, exit 2).
-- Done when: S5 green; all five scenarios now `pass` in the manifest.
+**NCU import — the three-column report.** Trigger: the first
+measured-vs-static question. `csv` crate joins the allowlist;
+kernel-name join (demangling-tolerant); transferred/requested ratio
+per kernel; versioned header check, fail loudly on schema drift.
+Verified blocker on this machine: `ERR_NVGPUCTRPERM` — capture needs
+`sudo ncu` or `NVreg_RestrictProfilingToAdminUsers=0`; capture is a
+manual, documented step and CI only ever reads committed CSV.
 
-**PR 19 — NCU import + three-column report.** (~250 LOC + fixture)
-- Contents: NCU CSV reader via the `csv` crate (kernel-name join,
-  demangling-tolerant); transferred/requested ratio per kernel;
-  `achieved` column when FLOP metrics present; missing-kernel and
-  schema-drift handling (versioned header check, fail loudly on
-  mismatch). Fixture: real capture on the RTX 4090 for `k1`+`k5`
-  (`ncu --csv` with dram/L2/FLOP metrics), committed with capture
-  provenance. **Verified blocker on this machine**: the driver
-  restricts counters (`ERR_NVGPUCTRPERM`) — capture requires `sudo ncu`
-  or `NVreg_RestrictProfilingToAdminUsers=0`; `regen.sh` documents
-  both, and a hand-authored CSV in the pinned schema is the committed
-  fallback until a privileged capture is run (provenance header says
-  which).
-- Tests: T1 reader on committed CSV + truncated/reordered-column
-  variants; T2: three-column golden for `k5` (requested from static,
-  transferred from CSV, ratio line); unmatched-kernel warning golden.
-- Done when: three-column report golden green from committed artifacts
-  only (no GPU in CI).
+**`annotate` HTML.** Trigger: wanting the per-line view. Source↔PTX
+interleave via `.loc`, per-instruction badges (loop depth, class,
+contribution), uncertainty highlights; self-contained HTML via plain
+`format!` — no template engine, no CDN.
 
-**PR 20 — `annotate` HTML.** (~300 LOC)
-- Contents: source↔PTX interleave via `.loc`, per-instruction badges
-  (loop depth, class, measurement contribution), uncertainty highlights
-  with fix-it hooks; self-contained HTML (inline CSS/JS, plain
-  `format!` templating — no engine dependency, no CDN).
-- Tests: T2 structural assertions via the Python runner (parse HTML:
-  every instruction row badged; every unknown highlighted; anchors per
-  loop ID) — not byte-exact.
-- Done when: `k5` and Triton-fixture pages render with zero unbadged
-  instructions.
+**Self-auditing extras** (extend PR 02/08/12). Trigger: corpus growth,
+a PTX-version bump, or external users. `tools/extract-opcodes.py` →
+`data/ptx_opcodes_<ver>.txt`, the canonical per-version instruction
+inventory derived from the ISA manual (a version bump becomes a
+one-screen diff naming every new instruction; classifier-table typos
+become CI failures via an inventory cross-check); the `capabilities`
+verb — the derived capability report (classified / unknown-by-policy
+with reason / not-yet-handled, plus corpus coverage), committed as an
+expected output so drift fails CI (the anti-STATUS.md rule: the only
+inventory of what the tool handles is the one the tool generates); a
+**ranked unknown histogram** weighted by symbolic execution count
+("what to add next" as data, not judgment); `proptest` properties for
+SymExpr.
 
-### Phase 9 — Hardening and switchover
-
-**PR 21 — Tier-4 live matrix + v1 differential + fuzz.** (~300 LOC scripts
-+ fuzz crate)
-- Contents: `tools/live_matrix.sh` — recompile ladder sources with host
-  toolchains (nvcc 13.2, clang/trunk), run relaxed invariant rules
-  (`rules-invariant.toml`: spill==0 where designed, tensor pipe engaged,
-  all_coalesced where designed, trips symbolic in K); **v1↔v2
-  differential**: run v1 (`llc -load NVPTXArithIntensity.so`) and v2 on
-  the same compiles of `smoke/fsub/fma/add_f64/local`, assert exact
-  agreement on flops, precision buckets, and global/local bytes;
-  `cargo-fuzz` targets `fuzz_lexer` + `fuzz_parser` (mutational, corpus
-  seeded from fixtures; smoke-length run wired into T4, longer runs
-  scripted) — gate: no panics, ever, on arbitrary bytes. The flat IR's
-  bump-allocate / drop-as-one-block lifecycle keeps per-iteration cost
-  low (allocator churn was 38% of runtime in the flattening post's
-  measurement), which translates directly into fuzz throughput and
-  therefore coverage.
-- Tests: the PR *is* tests; runner gains `live` and `differential` labels
-  excluded from default runs.
-- Done when: differential green on all five shared cases; one full live
-  run + a 1-hour fuzz run recorded in the PR description.
-
-**PR 22 — Docs + v1 maintenance mode.** (~doc-only)
-- Contents: `v2/README.md` (install via `cargo install --path`, the four
-  verbs, fixture/regen policy, limitations section mirroring the §1
-  audience boundary and anti-scope list verbatim — users read the same
-  honesty contract the code enforces); user guide with the five
-  scenarios as worked examples
-  (they're real now — outputs pasted from the acceptance goldens);
-  `cargo doc` builds clean with `#![warn(missing_docs)]` on the library;
-  top-level `STATUS.md` note: v1 frozen, v2 canonical; the C++ reference
-  files under `lib/PTX/` annotated as superseded.
-- Tests: doc lint (links resolve; CLI examples in docs are executed by a
-  runner case and must exit 0 — docs can't rot silently).
-- Done when: a newcomer can go from `git clone` to S1's report using only
-  the README.
+**Hardening + switchover.** Trigger: external users or toolchain
+drift. `cargo-fuzz` lexer/parser targets (no panics, ever, on
+arbitrary bytes; mutational, corpus-seeded; the flat IR's
+drop-as-one-block lifecycle keeps fuzz throughput high);
+`tools/live_matrix.sh` (T4: recompile fixture sources with host
+toolchains, relaxed invariant rules); the **v1↔v2 differential** on
+the five shared cases (exact agreement on flops, precision buckets,
+global/local bytes — after which v1 goes maintenance-mode and the C++
+reference under `lib/PTX/` is annotated as superseded); the full user
+guide with scenarios as worked examples; `cargo doc` clean with
+`#![warn(missing_docs)]`; doc lint (CLI examples in docs are executed
+by a runner case — docs can't rot silently).
 
 ---
 
 ## 7. Dependency graph (what can proceed in parallel)
 
+Phase 1:
+
 ```
-01 → 02 → 03 → 04 → 05 → 06 → 07 ─┬→ 08 → 09 ─┬→ 12 → 13★S1
-                                   │           │
-                                   │   10 → 11 ┘      14 → 15★S2
-                                   │                  (14 needs 07,09)
-                                   └→ 16 → 17★S3,S4   18★S5 (needs 12)
-                                                       19 (needs 12)
-                                                       20 (needs 12,17)
-                                                       21 (needs all★)
+01 → 02 → 03 → 04 → 05 → 06 → 07 → 08 → 09 ─┬→ 12 → 13 ★S1
+                                    10 → 11 ─┘
 ```
+
 PRs 10–11 (symbolics) can be developed in parallel with 08–09
-(semantics); 16 (affine) extends the scalar tracer that PR 11
-introduces (they share the `affine/` module — the k2 experiments showed
-even basic trip counts need affine tracing, so the tracer cannot wait
-for Phase 7), and its address/lane analysis can overlap Phase 5–6 work.
+(semantics); PR 11's scalar affine tracer is why trip counts don't
+wait on any later affine work. Phase 2 items each name the Phase 1 PR
+they extend; no backlog item blocks another.
 
 ## 8. Risks and open questions
 
 - **Transcription fidelity** (C++ → Rust for lexer/parser/classifier):
-  mitigated by the corpus-wide gates landing in the same PRs and the v1
-  differential in PR 21; the C++ reference stays in-tree until PR 22.
+  mitigated by the corpus-wide checks landing in the same PRs and the
+  v1 differential (Phase 2); the C++ reference stays in-tree until the
+  switchover.
 - **Rust idiom frictions are resolved by the flat-IR ground rule (§2)**,
   not discovered mid-build: no pointer structures means no graph/
   lifetime fights with the borrow checker. The residual cost is index
   opacity in tests and debuggers — mitigated by newtype ids everywhere
-  and by routing all snapshots/goldens through the symbol-resolving
-  dumper. If contributor Rust fluency is still ramping, budget Phases
-  1–2 at reduced velocity — the frontend is the gentlest terrain to
-  learn on, and the gates catch semantic drift regardless.
+  and by routing all snapshots and expected outputs through the
+  symbol-resolving dumper. If contributor Rust fluency is still ramping,
+  budget Phases 1–2 at reduced velocity — the frontend is the gentlest
+  terrain to learn on, and the corpus checks catch semantic drift
+  regardless.
 - **Param naming is positional** (`_param_2`) without debug info. Bound
   via `--bind 2:K=...`; the param-table printout (PR 07) is the
   mitigation. Revisit if `.loc`-adjacent DWARF gives real names.
 - **Triton PTX idioms** (heavily predicated masked loads, `v4` ops) may
-  stress PR 08's families; the corpus gate will say so precisely. Budget
-  one allowlist-review cycle in PR 08.
+  stress the classifier families when the Triton fixtures join
+  (Phase 2); the corpus check will say so precisely. Budget one
+  allowlist-review cycle in that item.
 - **wgmma/TMA bytes** are descriptor-driven and statically unknowable;
-  the design answer is the visible unquantified counter + `--bind-bytes`
-  (add to PR 12's `--assume` family when first needed; not speculatively).
+  the design answer is the visible unquantified counter + a
+  `--bind-bytes`-style flag (Phase 2, when first needed; not
+  speculatively).
 - **ptxas version skew** between fixture SASS and user SASS is real;
-  that's why SASS fixtures are committed with provenance and tier-4
-  re-derives them live.
-- **NCU schema drift** across versions: PR 19 pins the captured header
-  and fails loudly on mismatch rather than guessing column meaning.
+  that's why SASS fixtures are committed with provenance and the
+  Phase 2 live matrix re-derives them.
+- **NCU schema drift** across versions: the NCU import item (Phase 2)
+  pins the captured header and fails loudly on mismatch rather than
+  guessing column meaning.
 - **NCU counter permission** (verified failing on this machine):
   `ERR_NVGPUCTRPERM` unless run privileged or the driver is configured
   with `NVreg_RestrictProfilingToAdminUsers=0`. Capture is a manual,
@@ -855,36 +811,39 @@ for Phase 7), and its address/lane analysis can overlap Phase 5–6 work.
 - **Generic addressing** (`ld`/`st` with no state space) is legal PTX
   and unclassifiable to a concrete space without provenance; it gets
   its own honest bucket from day one. None of the current fixtures emit
-  it (verified) — the risk is producer-dependent, so the corpus gate
+  it (verified) — the risk is producer-dependent, so the corpus check
   will flag when it first appears.
-- **Loop ID stability under heavy unrolling** (loop disappears): `diff`
-  reports removed-loop honestly; acceptance has no case where we pretend
-  to match.
+- **Loop ID stability under heavy unrolling** (loop disappears):
+  `diff` (Phase 2) reports removed-loop honestly; acceptance has no
+  case where we pretend to match.
 - **Dependency creep**: the allowlist in §2 is the budget; serde-family +
   clap + cpp_demangle is already the bulk of compile time. Any proposed
   addition states what it replaces and why hand-rolling is worse.
 
 ## 9. Checklist
 
-- [x] PR 01 — scaffold + harness (cargo, clap stub, golden runner)
-- [ ] PR 02 — fixtures + acceptance spec (S1–S5 xfail)
+Phase 1:
+- [x] PR 01 — scaffold + harness (cargo, clap `analyze` stub, CLI test runner)
+- [ ] PR 02 — nvcc fixture corpus (k1/k2/k5 + micro) + S1 spec
 - [ ] PR 03 — lexer
 - [ ] PR 04 — parser/AST
 - [ ] PR 05 — CFG
 - [ ] PR 06 — dominators + loop forest
-- [ ] PR 07 — identity/naming
-- [ ] PR 08 — classifier (+ corpus gate)
-- [ ] PR 09 — Measurement v2 + Stats
+- [ ] PR 07 — loop naming + demangling
+- [ ] PR 08 — classifier (+ corpus coverage check)
+- [ ] PR 09 — Measurement + Stats
 - [ ] PR 10 — SymExpr
-- [ ] PR 11 — trip counts
-- [ ] PR 12 — `analyze`
-- [ ] PR 13 — machine model + verdicts ★S1
-- [ ] PR 14 — SASS readers
-- [ ] PR 15 — `diff` ★S2
-- [ ] PR 16 — affine evaluator
-- [ ] PR 17 — coalescing ★S3 ★S4
-- [ ] PR 18 — `check` ★S5
-- [ ] PR 19 — NCU import
-- [ ] PR 20 — `annotate`
-- [ ] PR 21 — live matrix + v1 differential + fuzz ★(no-panic gate)
-- [ ] PR 22 — docs + switchover
+- [ ] PR 11 — trip counts (nvcc shapes)
+- [ ] PR 12 — `analyze` report
+- [ ] PR 13 — machine model + verdicts + README ★S1 — **Phase 1 done**
+
+Phase 2 (backlog — tick when triggered and executed):
+- [ ] tensor/async/atomic/SFU families (+ k11/k12/k14 fixtures)
+- [ ] Triton + clang producers
+- [ ] `diff` + SASS sidecar ★S2
+- [ ] affine + coalescing ★S3 ★S4
+- [ ] `check` ★S5
+- [ ] NCU import (three-column report)
+- [ ] `annotate` HTML
+- [ ] self-auditing extras (opcode inventory, `capabilities`, histogram, proptest)
+- [ ] hardening + switchover (fuzz, live matrix, v1 differential, docs)

@@ -1,58 +1,69 @@
 #!/usr/bin/env python3
-"""Golden + acceptance runner — tiers T2 and T3 of PLAN.md §3.
+"""CLI test runner — tiers T2 and T3 of PLAN.md §3.
 
 Deliberately implementation-language-neutral and dependency-free:
 stdlib only, Python >= 3.11 (for tomllib). If ptxroof were ever
-rewritten again, this harness and its fixture corpus would survive
-unchanged.
+rewritten again, this harness and its committed test inputs would
+survive unchanged.
 
 Pipeline, in order:
 
-  1. Golden cases (T2). Every directory under tests/golden/cases/ with
-     a case.toml is run unconditionally and must pass. A case declares:
-       args     = ["analyze", "{case}/in.ptx"]   argv after the binary;
-                  "{case}" expands to the case dir, "{fixtures}" to
-                  tests/fixtures
-       exit     = 0          expected exit code (default 0)
-       greps_on = "stdout"   stream expected.greps applies to (or "stderr")
-       json     = false      force-parse stdout as JSON even without
-                             expected.json (so conservation gates run)
-     plus optional files:
-       expected.json   subset-matched against stdout parsed as JSON
-       expected.greps  ordered substring assertions, one per line
-                       ('#'-prefixed lines and blank lines are comments)
+  1. CLI tests (T2). Every directory under tests/cli/ with a case.toml
+     is run unconditionally and must pass. A case declares:
+       args         = ["analyze", "{case}/in.ptx"]  argv after the
+                      binary; "{case}" expands to the case dir,
+                      "{fixtures}" to tests/fixtures
+       exit         = 0         expected exit code (default 0)
+       check_stream = "stdout"  stream expected.checks applies to
+                                (or "stderr")
+       json         = false     force-parse stdout as JSON even without
+                                expected.json (so the report verifier
+                                runs)
+     plus optional committed expected-output files:
+       expected.json    compared field-by-field against stdout parsed
+                        as JSON (partial comparison, see below)
+       expected.checks  CHECK lines: substrings that must appear in
+                        order — the matching semantics of LLVM
+                        FileCheck's CHECK: directives. '#'-prefixed
+                        and blank lines are comments.
 
-  2. Conservation gates. Accounting identities run on EVERY case's
-     parsed JSON output — no per-fixture expectations, no human review.
-     The registry below is empty in PR 01; identities register here as
-     their analyses land (PR 08, 09, 12 — PLAN.md §3).
+  2. Report verifier. Internal-consistency checks run on EVERY case's
+     parsed JSON output — in the spirit of LLVM's IR verifier:
+     identities that must hold for any correct implementation, with no
+     per-case expectations and no human review. The registry below is
+     empty in PR 01; checks register here as their analyses land
+     (PR 08, 09, 12 — PLAN.md §3).
 
-  3. Acceptance scenarios (T3). manifest.toml [[scenario]] entries each
-     reference a case by name and carry status pass|xfail. Enforced in
-     both directions: pass-that-fails blocks, xfail-that-passes is ALSO
-     an error — it forces the manifest flip that records progress.
+  3. Acceptance scenarios (T3). tests/acceptance/status.toml lists the
+     acceptance scenarios, each referencing a case by name with status
+     pass | xfail ("expected failure" — the LLVM lit / pytest term).
+     Enforced in both directions: a pass scenario that fails blocks CI,
+     and an xfail scenario that passes is ALSO an error — it forces the
+     status.toml edit that records progress.
 
-  4. Coverage floors. manifest.toml [[floor]] entries. Each JSON report
-     may carry a "coverage" object of {metric: {"num": N, "den": D}}
-     fraction pairs (counts, not percentages — percentages cannot be
-     aggregated without weights). The runner sums num/den across the
-     corpus; for each active floor, achieved% < floor fails, and
-     achieved% > floor is also an error until --ratchet rewrites the
-     floor up to the achieved value — a visible manifest diff. Floors
-     only ever rise.
+  4. Minimum-coverage thresholds. status.toml [[min_coverage]] entries.
+     Each JSON report may carry a "coverage" object of
+     {metric: {"num": N, "den": D}} fraction pairs (counts, not
+     percentages — percentages cannot be aggregated without weights).
+     The runner sums num/den across all reports; for each enforced
+     entry, achieved% below the recorded minimum fails, and achieved%
+     above it is also an error until --raise-min rewrites the minimum
+     up to the achieved value — a visible status.toml diff. Minimums
+     may only rise (a ratchet: it turns one way).
 
-Subset-matcher semantics (the T2 contract):
+Partial-comparison semantics for expected.json (the T2 contract):
   - objects: every expected key must exist in actual and match; EXTRA
-    actual keys are ignored (additions never break goldens).
+    actual keys are ignored (new report fields never break old tests).
   - arrays: same length, element-wise match (arrays are ordered data;
-    "subset" applies to object keys only).
+    partial comparison applies to object keys only).
   - scalars: exact equality, including floats — analysis is exact
-    rational arithmetic on static counts, so goldens store exact values.
+    arithmetic on static counts, so expected outputs store exact values.
 
 Usage:
   run.py                  run everything (binary: target/debug/ptxroof)
   run.py --bin PATH       use a different binary
-  run.py --ratchet        also rewrite beaten floors in the manifest
+  run.py --raise-min      also record beaten coverage minimums in
+                          status.toml
   run.py --self-test      run the runner's own unit tests (no binary)
 """
 
@@ -67,34 +78,34 @@ if sys.version_info < (3, 11):
 
 import tomllib
 
-V2_ROOT = Path(__file__).resolve().parents[2]
-CASES_DIR = V2_ROOT / "tests" / "golden" / "cases"
+V2_ROOT = Path(__file__).resolve().parents[1]
+CLI_TESTS_DIR = V2_ROOT / "tests" / "cli"
 ACCEPTANCE_DIR = V2_ROOT / "tests" / "acceptance"
 FIXTURES_DIR = V2_ROOT / "tests" / "fixtures"
-MANIFEST = ACCEPTANCE_DIR / "manifest.toml"
+STATUS_FILE = ACCEPTANCE_DIR / "status.toml"
 DEFAULT_BIN = V2_ROOT / "target" / "debug" / "ptxroof"
 CASE_TIMEOUT_S = 120
 
 # --------------------------------------------------------------------------
-# Conservation gates (PLAN.md §3): (name, fn(report) -> [violation, ...]).
+# Report verifier (PLAN.md §3): (name, fn(report) -> [violation, ...]).
 # Each fn receives one case's parsed JSON report and returns human-readable
-# violation strings. Registered as analyses land:
+# violation strings. Checks register as analyses land:
 #   PR 08  classified + allowlisted-unknown == total instructions
 #   PR 09  sum of per-block counts == kernel totals
 #   PR 12  per-loop per-iteration x bound trip expr == flat count;
 #          every Measurement provenance index resolves to an instruction
-CONSERVATION_GATES = []
+VERIFIER_CHECKS = []
 
 
-def run_gates(report):
+def verify_report(report):
     violations = []
-    for name, fn in CONSERVATION_GATES:
-        violations += [f"gate '{name}': {v}" for v in fn(report)]
+    for name, fn in VERIFIER_CHECKS:
+        violations += [f"verifier '{name}': {v}" for v in fn(report)]
     return violations
 
 
 # --------------------------------------------------------------------------
-# JSON subset matcher (T2)
+# Partial JSON comparison (T2)
 
 
 def subset_match(expected, actual, path="$"):
@@ -126,10 +137,11 @@ def subset_match(expected, actual, path="$"):
 
 
 # --------------------------------------------------------------------------
-# Ordered greps (T2)
+# CHECK lines (T2) — ordered substring matching, the semantics of LLVM
+# FileCheck's CHECK: directives (without the prefix syntax).
 
 
-def parse_greps(text):
+def parse_check_lines(text):
     needles = []
     for line in text.splitlines():
         line = line.rstrip("\n")
@@ -139,8 +151,8 @@ def parse_greps(text):
     return needles
 
 
-def grep_ordered(needles, text):
-    """Each needle must occur, after the previous needle's match."""
+def match_check_lines(needles, text):
+    """Each CHECK line must occur, after the previous line's match."""
     errs = []
     pos = 0
     for needle in needles:
@@ -148,14 +160,14 @@ def grep_ordered(needles, text):
         if i >= 0:
             pos = i + len(needle)
         elif text.find(needle) >= 0:
-            errs.append(f"grep out of order: {needle!r}")
+            errs.append(f"CHECK out of order: {needle!r}")
         else:
-            errs.append(f"grep not found: {needle!r}")
+            errs.append(f"CHECK not found: {needle!r}")
     return errs
 
 
 # --------------------------------------------------------------------------
-# Coverage floors (T3 cross-cutting)
+# Minimum-coverage thresholds (T3 cross-cutting)
 
 
 def aggregate_coverage(reports):
@@ -168,47 +180,48 @@ def aggregate_coverage(reports):
     return totals
 
 
-def check_floors(floors, totals):
-    """Return (violations, ratchets) where ratchets maps metric -> new
-    floor percent for floors beaten by the corpus."""
-    violations, ratchets = [], {}
-    for floor in floors:
-        if not floor.get("active", False):
+def check_min_coverage(minimums, totals):
+    """Return (violations, raises) where raises maps metric -> new minimum
+    percent for entries the corpus now exceeds."""
+    violations, raises = [], {}
+    for entry in minimums:
+        if not entry.get("enforced", False):
             continue
-        metric, threshold = floor["metric"], floor["floor"]
+        metric, minimum = entry["metric"], entry["percent"]
         if metric not in totals:
             violations.append(
-                f"floor '{metric}' is active but no case emitted coverage for it"
+                f"min_coverage '{metric}' is enforced but no case emitted "
+                "coverage for it"
             )
             continue
         num, den = totals[metric]
         if den == 0:
-            violations.append(f"floor '{metric}': denominator 0 across corpus")
+            violations.append(f"min_coverage '{metric}': denominator 0 across corpus")
             continue
         achieved = round(100.0 * num / den, 2)
-        if achieved < threshold:
+        if achieved < minimum:
             violations.append(
-                f"floor '{metric}': achieved {achieved}% < floor {threshold}%"
+                f"min_coverage '{metric}': achieved {achieved}% < minimum {minimum}%"
             )
-        elif achieved > threshold:
-            ratchets[metric] = achieved
-    return violations, ratchets
+        elif achieved > minimum:
+            raises[metric] = achieved
+    return violations, raises
 
 
-def ratchet_manifest_text(text, ratchets):
-    """Rewrite `floor = X` lines to the new achieved values. Relies on the
-    documented manifest format contract: within a [[floor]] block the
-    `metric` line precedes its `floor` line."""
+def raise_min_text(text, raises):
+    """Rewrite `percent = X` lines to the new achieved values. Relies on the
+    documented status.toml format contract: within a [[min_coverage]] block
+    the `metric` line precedes its `percent` line."""
     out, current_metric = [], None
     for line in text.splitlines(keepends=True):
         stripped = line.strip()
-        if stripped.startswith("[[floor]]"):
+        if stripped.startswith("[[min_coverage]]"):
             current_metric = None
         elif stripped.startswith("metric"):
             current_metric = stripped.split("=", 1)[1].strip().strip('"')
-        elif stripped.startswith("floor") and current_metric in ratchets:
+        elif stripped.startswith("percent") and current_metric in raises:
             indent = line[: len(line) - len(line.lstrip())]
-            line = f"{indent}floor = {ratchets[current_metric]}\n"
+            line = f"{indent}percent = {raises[current_metric]}\n"
         out.append(line)
     return "".join(out)
 
@@ -222,7 +235,7 @@ def evaluate_scenario(status, case_passed):
     if status == "pass" and not case_passed:
         return "regressed: status is 'pass' but the case failed"
     if status == "xfail" and case_passed:
-        return "passes now: flip status to 'pass' in manifest.toml"
+        return "passes now: flip status to 'pass' in status.toml"
     if status not in ("pass", "xfail"):
         return f"unknown status {status!r} (want 'pass' or 'xfail')"
     return None
@@ -233,7 +246,7 @@ def evaluate_scenario(status, case_passed):
 
 
 def find_case_dir(name):
-    for base in (ACCEPTANCE_DIR, CASES_DIR):
+    for base in (ACCEPTANCE_DIR, CLI_TESTS_DIR):
         d = base / name
         if (d / "case.toml").is_file():
             return d
@@ -272,13 +285,19 @@ def run_case(binary, case_dir):
     if expected_json.is_file() and report is not None:
         details += subset_match(json.loads(expected_json.read_text()), report)
 
-    expected_greps = case_dir / "expected.greps"
-    if expected_greps.is_file():
-        stream = proc.stderr if spec.get("greps_on", "stdout") == "stderr" else proc.stdout
-        details += grep_ordered(parse_greps(expected_greps.read_text()), stream)
+    expected_checks = case_dir / "expected.checks"
+    if expected_checks.is_file():
+        stream = (
+            proc.stderr
+            if spec.get("check_stream", "stdout") == "stderr"
+            else proc.stdout
+        )
+        details += match_check_lines(
+            parse_check_lines(expected_checks.read_text()), stream
+        )
 
     if report is not None:
-        details += run_gates(report)
+        details += verify_report(report)
 
     return not details, details, report
 
@@ -287,16 +306,16 @@ def run_case(binary, case_dir):
 # Driver
 
 
-def load_manifest():
-    if not MANIFEST.is_file():
+def load_status():
+    if not STATUS_FILE.is_file():
         return {}
-    return tomllib.loads(MANIFEST.read_text())
+    return tomllib.loads(STATUS_FILE.read_text())
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--bin", type=Path, default=DEFAULT_BIN)
-    ap.add_argument("--ratchet", action="store_true")
+    ap.add_argument("--raise-min", action="store_true")
     ap.add_argument("--self-test", action="store_true")
     opts = ap.parse_args()
 
@@ -306,28 +325,28 @@ def main():
     if not opts.bin.is_file():
         sys.exit(f"run.py: binary {opts.bin} not found — run `cargo build` first")
 
-    manifest = load_manifest()
+    status = load_status()
     failures = 0
     reports = []
 
-    # 1+2: golden cases (+ gates inside run_case)
+    # 1+2: CLI tests (+ report verifier inside run_case)
     case_dirs = (
-        sorted(d for d in CASES_DIR.iterdir() if (d / "case.toml").is_file())
-        if CASES_DIR.is_dir()
+        sorted(d for d in CLI_TESTS_DIR.iterdir() if (d / "case.toml").is_file())
+        if CLI_TESTS_DIR.is_dir()
         else []
     )
     for case_dir in case_dirs:
         passed, details, report = run_case(opts.bin, case_dir)
         if report is not None:
             reports.append(report)
-        print(f"{'PASS' if passed else 'FAIL'}  golden  {case_dir.name}")
+        print(f"{'PASS' if passed else 'FAIL'}  cli     {case_dir.name}")
         for d in details:
             print(f"        {d}")
         failures += 0 if passed else 1
 
     # 3: acceptance scenarios
-    for scenario in manifest.get("scenario", []):
-        sid, status = scenario["id"], scenario["status"]
+    for scenario in status.get("scenario", []):
+        sid, sc_status = scenario["id"], scenario["status"]
         case_dir = find_case_dir(scenario["case"])
         if case_dir is None:
             print(f"FAIL  {sid:6}  case '{scenario['case']}' not found")
@@ -336,8 +355,8 @@ def main():
         passed, details, report = run_case(opts.bin, case_dir)
         if report is not None:
             reports.append(report)
-        err = evaluate_scenario(status, passed)
-        label = "FAIL" if err else ("XFAIL" if status == "xfail" else "PASS")
+        err = evaluate_scenario(sc_status, passed)
+        label = "FAIL" if err else ("XFAIL" if sc_status == "xfail" else "PASS")
         print(f"{label:5} {sid:6}  {scenario['case']}")
         if err:
             print(f"        {err}")
@@ -345,26 +364,29 @@ def main():
                 print(f"        {d}")
             failures += 1
 
-    # 4: coverage floors
-    floors = manifest.get("floor", [])
-    violations, ratchets = check_floors(floors, aggregate_coverage(reports))
+    # 4: minimum-coverage thresholds
+    minimums = status.get("min_coverage", [])
+    violations, raises = check_min_coverage(minimums, aggregate_coverage(reports))
     for v in violations:
-        print(f"FAIL  floor   {v}")
+        print(f"FAIL  mincov  {v}")
         failures += 1
-    if ratchets:
-        if opts.ratchet:
-            MANIFEST.write_text(ratchet_manifest_text(MANIFEST.read_text(), ratchets))
-            for metric, new in ratchets.items():
-                print(f"RATCHET floor '{metric}' -> {new}% (commit the manifest diff)")
-        else:
-            for metric, new in ratchets.items():
+    if raises:
+        if opts.raise_min:
+            STATUS_FILE.write_text(raise_min_text(STATUS_FILE.read_text(), raises))
+            for metric, new in raises.items():
                 print(
-                    f"FAIL  floor   '{metric}' beaten: achieved {new}% — "
-                    "rerun with --ratchet and commit the manifest diff"
+                    f"RAISED min_coverage '{metric}' -> {new}% "
+                    "(commit the status.toml diff)"
+                )
+        else:
+            for metric, new in raises.items():
+                print(
+                    f"FAIL  mincov  '{metric}' exceeded: achieved {new}% — "
+                    "rerun with --raise-min and commit the status.toml diff"
                 )
                 failures += 1
 
-    n_cases = len(case_dirs) + len(manifest.get("scenario", []))
+    n_cases = len(case_dirs) + len(status.get("scenario", []))
     print(f"run.py: {n_cases} case(s), {failures} failure(s)")
     return 1 if failures else 0
 
@@ -381,24 +403,25 @@ def self_test():
         n += 1
         assert cond, f"self-test failed: {what}"
 
-    # subset matcher: the T2 contract
+    # partial JSON comparison: the T2 contract
     ok(subset_match({"a": 1}, {"a": 1, "b": 2}) == [], "extra actual field passes")
     ok(subset_match({"a": 1, "b": 2}, {"a": 1}) != [], "missing field fails")
-    ok(subset_match({"a": {"b": 3}}, {"a": {"b": 3, "c": 4}}) == [], "nested subset")
+    ok(subset_match({"a": {"b": 3}}, {"a": {"b": 3, "c": 4}}) == [], "nested partial")
     ok(subset_match({"a": 1}, {"a": 2}) != [], "wrong scalar fails")
     ok(subset_match({"a": True}, {"a": 1}) != [], "bool is not int")
     ok(subset_match([1, 2], [1, 2]) == [], "array exact match")
     ok(subset_match([1], [1, 2]) != [], "array length mismatch fails")
     ok(subset_match({"a": [1]}, {"a": {"x": 1}}) != [], "type mismatch fails")
 
-    # ordered greps
-    ok(grep_ordered(["aa", "bb"], "xx aa yy bb zz") == [], "greps in order")
-    ok(grep_ordered(["bb", "aa"], "xx aa yy bb zz") != [], "greps out of order fail")
-    ok(any("out of order" in e for e in grep_ordered(["bb", "aa"], "aa bb")),
+    # CHECK lines
+    ok(match_check_lines(["aa", "bb"], "xx aa yy bb zz") == [], "CHECKs in order")
+    ok(match_check_lines(["bb", "aa"], "xx aa yy bb zz") != [],
+       "CHECKs out of order fail")
+    ok(any("out of order" in e for e in match_check_lines(["bb", "aa"], "aa bb")),
        "ordering violation named")
-    ok(any("not found" in e for e in grep_ordered(["cc"], "aa bb")),
+    ok(any("not found" in e for e in match_check_lines(["cc"], "aa bb")),
        "absence named")
-    ok(parse_greps("# comment\n\nneedle\n") == ["needle"], "comments stripped")
+    ok(parse_check_lines("# comment\n\nneedle\n") == ["needle"], "comments stripped")
 
     # scenario status: both directions
     ok(evaluate_scenario("pass", True) is None, "pass+passes ok")
@@ -407,7 +430,7 @@ def self_test():
     ok(evaluate_scenario("xfail", True) is not None, "xfail+passes errors")
     ok(evaluate_scenario("skip", True) is not None, "unknown status errors")
 
-    # coverage aggregation + floors + ratchet
+    # coverage aggregation + minimums + raising
     totals = aggregate_coverage(
         [
             {"coverage": {"m": {"num": 9, "den": 10}}},
@@ -416,39 +439,40 @@ def self_test():
         ]
     )
     ok(totals == {"m": (9, 20)}, "coverage sums counts across corpus")
-    floors = [{"metric": "m", "floor": 50.0, "active": True}]
-    viol, rat = check_floors(floors, {"m": (9, 20)})
-    ok(viol != [] and rat == {}, "below floor violates")
-    viol, rat = check_floors(floors, {"m": (10, 20)})
-    ok(viol == [] and rat == {}, "exactly at floor passes")
-    viol, rat = check_floors(floors, {"m": (15, 20)})
-    ok(viol == [] and rat == {"m": 75.0}, "beaten floor demands ratchet")
-    viol, rat = check_floors([{"metric": "m", "floor": 99.0, "active": False}],
-                             {"m": (0, 20)})
-    ok(viol == [] and rat == {}, "inactive floor ignored")
-    viol, _ = check_floors(floors, {})
-    ok(viol != [], "active floor with no data violates")
-
-    manifest_text = (
-        '[[floor]]\nmetric = "m"\nfloor = 50.0\nactive = true\n'
-        '[[floor]]\nmetric = "n"\nfloor = 10.0\nactive = true\n'
+    minimums = [{"metric": "m", "percent": 50.0, "enforced": True}]
+    viol, rai = check_min_coverage(minimums, {"m": (9, 20)})
+    ok(viol != [] and rai == {}, "below minimum violates")
+    viol, rai = check_min_coverage(minimums, {"m": (10, 20)})
+    ok(viol == [] and rai == {}, "exactly at minimum passes")
+    viol, rai = check_min_coverage(minimums, {"m": (15, 20)})
+    ok(viol == [] and rai == {"m": 75.0}, "beaten minimum demands --raise-min")
+    viol, rai = check_min_coverage(
+        [{"metric": "m", "percent": 99.0, "enforced": False}], {"m": (0, 20)}
     )
-    new_text = ratchet_manifest_text(manifest_text, {"m": 75.0})
-    ok("floor = 75.0" in new_text and "floor = 10.0" in new_text,
-       "ratchet rewrites only the beaten floor")
-    ok(tomllib.loads(new_text)["floor"][0]["floor"] == 75.0,
-       "ratcheted manifest still parses")
+    ok(viol == [] and rai == {}, "unenforced minimum ignored")
+    viol, _ = check_min_coverage(minimums, {})
+    ok(viol != [], "enforced minimum with no data violates")
 
-    # conservation-gate hook
-    CONSERVATION_GATES.append(
+    status_text = (
+        '[[min_coverage]]\nmetric = "m"\npercent = 50.0\nenforced = true\n'
+        '[[min_coverage]]\nmetric = "n"\npercent = 10.0\nenforced = true\n'
+    )
+    new_text = raise_min_text(status_text, {"m": 75.0})
+    ok("percent = 75.0" in new_text and "percent = 10.0" in new_text,
+       "raise rewrites only the beaten minimum")
+    ok(tomllib.loads(new_text)["min_coverage"][0]["percent"] == 75.0,
+       "rewritten status file still parses")
+
+    # report-verifier hook
+    VERIFIER_CHECKS.append(
         ("totals", lambda r: [] if r.get("a") == r.get("b") else ["a != b"])
     )
     try:
-        ok(run_gates({"a": 1, "b": 1}) == [], "holding identity is silent")
-        got = run_gates({"a": 1, "b": 2})
-        ok(got == ["gate 'totals': a != b"], "violated identity is named")
+        ok(verify_report({"a": 1, "b": 1}) == [], "holding identity is silent")
+        got = verify_report({"a": 1, "b": 2})
+        ok(got == ["verifier 'totals': a != b"], "violated identity is named")
     finally:
-        CONSERVATION_GATES.pop()
+        VERIFIER_CHECKS.pop()
 
     print(f"run.py --self-test: {n} assertions passed")
     return 0
