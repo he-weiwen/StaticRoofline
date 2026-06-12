@@ -8,6 +8,7 @@
 //! errors.
 
 pub mod cfg;
+pub mod classify;
 pub mod core;
 pub mod parse;
 
