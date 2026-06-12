@@ -1,0 +1,6 @@
+# Smoke for positional-argument parsing and the {case} placeholder. The
+# stub never opens the file, so in.ptx here is a placeholder; PR 13 turns
+# this into a real analyze golden with expected.json.
+args = ["analyze", "{case}/in.ptx"]
+exit = 2
+greps_on = "stderr"

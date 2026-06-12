@@ -1,0 +1,8 @@
+# End-to-end smoke of the T2 pipeline against the PR 01 stub: proves the
+# runner builds the argv, captures streams, checks the exit code, and
+# greps stderr. When PR 12 implements `capabilities`, this case's exit
+# code and greps change — a golden diff, exactly as the review protocol
+# wants.
+args = ["capabilities"]
+exit = 2
+greps_on = "stderr"

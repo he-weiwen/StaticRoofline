@@ -1,0 +1,17 @@
+[package]
+name = "ptxroof"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.96"
+description = "Static roofline analysis for PTX kernels"
+license = "MIT"
+publish = false
+
+# One package, two targets: the library (src/lib.rs) is the product, the
+# binary (src/main.rs) is a thin CLI shell over it. Dependencies join the
+# manifest at the PR that first uses them, never earlier, so the
+# Cargo.lock diff of each PR attributes every new dependency to the code
+# that needed it. The full allowlist lives in PLAN.md §2.
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }

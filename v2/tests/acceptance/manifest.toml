@@ -1,0 +1,30 @@
+# Acceptance manifest (PLAN.md §3, T3) — the single source of truth for
+# scenario status and coverage floors. The golden runner enforces it in
+# BOTH directions: a `pass` scenario that fails blocks CI, and an `xfail`
+# scenario that passes is ALSO an error (it forces the status flip, so
+# progress is always recorded here). Development progress IS the sequence
+# of xfail -> pass diffs in this file.
+#
+# PR 01 commits the schema; the S1-S5 entries and the floor table land
+# with the fixture corpus in PR 02.
+#
+# Scenario schema:
+#
+#   [[scenario]]
+#   id = "S1"                 # PLAN.md §4 row
+#   case = "s1-blocktiling"   # case dir under tests/acceptance/ or
+#                             #   tests/golden/cases/
+#   status = "xfail"          # xfail | pass
+#
+# Coverage-floor schema (floors are RATCHETS — they only ever rise):
+#
+#   [[floor]]
+#   metric = "instructions_classified"  # key in the result JSON's
+#                                       #   "coverage" object
+#   floor = 0.0                         # percent; rewritten by --ratchet
+#   active = false                      # flips true at the PR that lands
+#                                       #   the emitting analysis
+#
+# Format contract for --ratchet: inside a [[floor]] block the `metric`
+# line precedes its `floor` line; the runner rewrites the number in
+# place, so the ratchet is always visible as a diff of this file.
