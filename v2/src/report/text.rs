@@ -59,6 +59,19 @@ pub fn render(report: &Report) -> String {
                 l.block[0], l.block[1], l.block[2], l.threads, l.source
             );
         }
+        let sm = &k.shared_memory;
+        if sm.static_bytes > 0 || sm.dynamic {
+            let dyn_note = if sm.dynamic {
+                " + dynamic (set at launch)"
+            } else {
+                ""
+            };
+            let _ = writeln!(
+                w,
+                "  shared memory [static]: {} B per CTA{dyn_note}",
+                sm.static_bytes
+            );
+        }
         if k.ranking.len() > 1 {
             let _ = writeln!(w, "  loops by weight:");
             for (i, r) in k.ranking.iter().enumerate() {

@@ -52,6 +52,14 @@ pub struct KernelReport {
     pub name: String,
     pub demangled: String,
     pub params: Vec<ParamInfo>,
+    /// Shared memory reserved per CTA. `static_bytes` is the sum of the
+    /// kernel's `.shared` array declarations — a `[static]` demand
+    /// figure that matches ptxas's `bytes smem` and Nsight Compute's
+    /// `launch__shared_mem_per_block_static`; driver-reserved shared
+    /// memory (NCU's `_driver`) is not included. `dynamic` is set when
+    /// the kernel also declares an `.extern .shared` array whose size is
+    /// fixed at launch and so is not statically knowable.
+    pub shared_memory: SharedMemory,
     /// Instruction-class tallies; the verifier's accounting identity
     /// (`flop + ... + unknown == total`) runs on these.
     pub instruction_classes: InstructionClasses,
@@ -113,6 +121,14 @@ pub struct Verdict {
     pub ai_global: f64,
     pub knee: f64,
     pub verdict: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SharedMemory {
+    /// Statically-declared shared memory per CTA, in bytes.
+    pub static_bytes: u64,
+    /// An `.extern .shared` array is present; its size is set at launch.
+    pub dynamic: bool,
 }
 
 #[derive(Debug, Serialize)]

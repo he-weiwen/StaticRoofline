@@ -13,6 +13,7 @@ kernel void hgemm_2d_blocktiling<64, 64, 8, 8, 8>(int, int, int, float, ...)
   hot loop: 5_2d_blocktiling.cuh:39
   verdict @ sm_80 (A100-SXM4-40GB, from target-directive): compute-bound —
       loop 5_2d_blocktiling.cuh:39 AI(global) 32 flop/B vs f32 knee 12.5
+  shared memory [static]: 2048 B per CTA
   loop 5_2d_blocktiling.cuh:39 ($L__BB0_2)
     trips = ceildiv(param_2, 8)
     per iteration:
@@ -51,6 +52,14 @@ memory system moves more bytes than requested (uncoalesced overfetch)
 or fewer (cache reuse). A static number is a bound and a design check,
 not a measurement; for measured DRAM traffic and achieved rates, use
 Nsight Compute.
+
+The per-kernel `shared memory [static]` line is the same kind of
+figure: the bytes the kernel declares in `.shared`, which is exactly
+what ptxas reports as `bytes smem` and Nsight Compute as
+`launch__shared_mem_per_block_static`. The CUDA driver's own reserved
+shared memory and any launch-sized dynamic allocation (flagged
+`+ dynamic`) are not included — the dynamic amount is knowable only at
+launch.
 
 Verdicts inherit this contract: "memory-bound" means the *requested*
 AI sits below the machine's knee — a no-reuse worst case, since the

@@ -743,6 +743,37 @@ validation.** (fixtures + 1 case; post-Phase-1, same conventions)
 - Done when: S1.2 green alongside S1.1; regen of all four kN PTX files
   is a no-op diff; trip-coverage ratchet raised (16/17 = 94.12%).
 
+**PR 15 — Static shared memory per CTA.** (~40 LOC; post-Phase-1, same
+conventions)
+- Contents: `KernelReport.shared_memory = {static_bytes, dynamic}`,
+  rendered in both views. `static_bytes` sums `element_count ×
+  element_width` over the kernel's `.shared` array declarations (width
+  reuses the classifier's PTX type table — no new table); `dynamic`
+  flags an `.extern .shared` array whose size is fixed at launch and so
+  is not statically known and not in the static total. A `[static]`
+  demand figure: it is the kernel-declared shared memory ptxas reports
+  as `bytes smem` and NCU as `launch__shared_mem_per_block_static`, not
+  the driver-reserved portion (NCU's `_driver`). Static smem is the one
+  on-chip resource ptxas does not reallocate, so the source figure is
+  authoritative — unlike registers, whose PTX `.reg` count is virtual,
+  not the physical per-thread count occupancy depends on (that stays
+  NCU's, per the §1 anti-scope).
+- Tests: T1 unit (the k5 two-array shape → 2048; typed-array and
+  b64/b128 widths; the no-smem k1 shape → 0; `.extern` dynamic flagged;
+  mixed static+dynamic). T2: the S7 pair gains a committed assertion —
+  naive 0 B/CTA vs tiled 2048 — and the k5 text CLI check gains the
+  rendered line. The 2048 was confirmed against `ptxas -v` on both the
+  sm_80 and sm_89 fixtures (`2048 bytes smem`, arch-independent).
+- Anti-scope held: reports requested bytes, never an occupancy ceiling
+  (that needs a per-arch smem-per-SM table and the runtime carveout —
+  NCU's job). Two pieces deferred to their own triggers: module-scope
+  `.shared` globals (the corpus has only nvcc's in-body "demoted" form;
+  a top-level `.shared` parser arm + fixture lands when a producer emits
+  one) and the dynamic byte count itself (knowable only at launch — the
+  validator there is NCU's `launch__shared_mem_per_block_dynamic`).
+- Done when: unit + S7.1/S7.2 + k5 text checks green; no occupancy
+  claim enters the report.
+
 ### Phase 2 — the demand-driven backlog
 
 Nothing here is scheduled. An item starts only when its trigger fires;
@@ -947,6 +978,7 @@ Phase 1:
 - [x] PR 12 — `analyze` report ★S6 ★S7 ★S8 ★S9
 - [x] PR 13 — machine model + verdicts + README ★S1 — **Phase 1 done**
 - [x] PR 14 — sm_89 fixtures (k1/k5) ★S1.2 + NCU validation on the local RTX 4090
+- [x] PR 15 — static shared memory per CTA (★S7.1/S7.2 assertions + `ptxas -v` cross-check)
 
 Phase 2 (backlog — tick when triggered and executed):
 - [ ] tensor/async/atomic/SFU families (+ k11/k12/k14 fixtures)

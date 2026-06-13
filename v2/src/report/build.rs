@@ -713,6 +713,31 @@ impl<'a> KernelBuilder<'a> {
         out
     }
 
+    /// Shared memory the kernel reserves per CTA: the sum over its
+    /// `.shared` array declarations of `element_count × element_width`,
+    /// plus whether it declares a launch-sized `.extern .shared` array.
+    /// See [`SharedMemory`]. Element width reuses the classifier's PTX
+    /// type table; an unrecognized type falls back to byte sizing, the
+    /// `.b8` form nvcc emits for shared tiles.
+    fn shared_memory(&self) -> SharedMemory {
+        let mut static_bytes = 0u64;
+        let mut dynamic = false;
+        for decl in &self.kernel.shared_decls {
+            match decl.size {
+                Some(count) => {
+                    let ty = self.module.interner.resolve(decl.ty);
+                    let width = crate::classify::type_width(ty).unwrap_or(1) as u64;
+                    static_bytes += count * width;
+                }
+                None => dynamic = true,
+            }
+        }
+        SharedMemory {
+            static_bytes,
+            dynamic,
+        }
+    }
+
     fn build(
         self,
         arches: &[(String, crate::machine::Machine, &'static str)],
@@ -780,6 +805,7 @@ impl<'a> KernelBuilder<'a> {
                     name: self.module.interner.resolve(p.name).to_owned(),
                 })
                 .collect(),
+            shared_memory: self.shared_memory(),
             instruction_classes: classes,
             hot_loop: ranking.first().map(|(_, r)| r.loop_name.clone()),
             verdicts,
@@ -824,5 +850,46 @@ mod tests {
         assert!(parse_bind("K=x").is_err());
         assert!(parse_bind("=4").is_err());
         assert!(parse_bind("a:K=4").is_err());
+    }
+
+    /// Static shared memory per CTA = Σ (element count × element width)
+    /// over `.shared` decls; `.extern .shared` is dynamic, not counted.
+    #[test]
+    fn shared_memory_static_and_dynamic() {
+        let opts = AnalyzeOptions::default();
+        let body = |decls: &str| {
+            format!(
+                ".version 8.7\n.target sm_80\n.address_size 64\n\
+                 .visible .entry k()\n{{\n{decls}ret;\n}}\n"
+            )
+        };
+        let sm = |decls: &str| {
+            let r = analyze(&body(decls), "t", &opts).expect("analyzes");
+            let s = &r.kernels[0].shared_memory;
+            (s.static_bytes, s.dynamic)
+        };
+
+        // The k5 shape: two byte arrays, 1024 + 1024 = 2048 (matches the
+        // `2048 bytes smem` ptxas reports for the k5 fixture).
+        assert_eq!(
+            sm(".shared .align 2 .b8 As[1024];\n.shared .align 2 .b8 Bs[1024];\n"),
+            (2048, false)
+        );
+        // Typed array: per-element width applies, 256 × 4 = 1024.
+        assert_eq!(sm(".shared .align 4 .f32 buf[256];\n"), (1024, false));
+        // Width coverage: b64 → 8, b128 → 16.
+        assert_eq!(
+            sm(".shared .b64 w[4];\n.shared .b128 q[2];\n"),
+            (4 * 8 + 2 * 16, false)
+        );
+        // The k1 shape: no shared memory at all.
+        assert_eq!(sm(""), (0, false));
+        // Dynamic extern shared: out of the static total, flagged.
+        assert_eq!(sm(".extern .shared .align 8 .b8 dsm[];\n"), (0, true));
+        // Mixed: static counted, dynamic flagged.
+        assert_eq!(
+            sm(".shared .align 2 .b8 As[1024];\n.extern .shared .align 8 .b8 dsm[];\n"),
+            (1024, true)
+        );
     }
 }

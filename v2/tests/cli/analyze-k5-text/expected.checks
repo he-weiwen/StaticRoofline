@@ -1,5 +1,6 @@
 kernel void hgemm_2d_blocktiling<64, 64, 8, 8, 8>(
 hot loop: 5_2d_blocktiling.cuh:39
+shared memory [static]: 2048 B per CTA
 loop 5_2d_blocktiling.cuh:39 ($L__BB0_2)
 trips = ceildiv(param_2, 8)
 AI(global) = 32 flop/B
