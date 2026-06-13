@@ -703,6 +703,26 @@ impl<'a> KernelBuilder<'a> {
                 reason: "cycle with multiple entries — execution multiplicity unknown".to_owned(),
             });
         }
+        for (block, target) in &self.cfg.unresolved_branches {
+            let from = self
+                .cfg
+                .block(*block)
+                .label
+                .map(|s| self.module.interner.resolve(s).to_owned())
+                .unwrap_or_else(|| format!("<block {}>", block.0));
+            out.push(UnknownEntry {
+                what: format!(
+                    "branch to `{}` from {from}",
+                    self.module.interner.resolve(*target)
+                ),
+                count: None,
+                reason: "branch target matched no label in this kernel; its edge \
+                         was dropped, so the control-flow graph — and any loop \
+                         structure derived from it — may be incomplete. Unexpected \
+                         for compiler-produced PTX"
+                    .to_owned(),
+            });
+        }
         if !self.cfg.call_sites.is_empty() {
             out.push(UnknownEntry {
                 what: "call".to_owned(),
@@ -890,6 +910,22 @@ mod tests {
         assert_eq!(
             sm(".shared .align 2 .b8 As[1024];\n.extern .shared .align 8 .b8 dsm[];\n"),
             (1024, true)
+        );
+    }
+
+    /// A `bra` whose target matches no label surfaces as a report
+    /// unknown (the dropped edge is reported, not hidden).
+    #[test]
+    fn unresolved_branch_surfaces_as_unknown() {
+        let opts = AnalyzeOptions::default();
+        let src = ".version 8.7\n.target sm_80\n.address_size 64\n\
+                   .visible .entry k()\n{\nbra $L__MISSING;\nret;\n}\n";
+        let r = analyze(src, "t", &opts).expect("analyzes despite the dangling branch");
+        let u = &r.kernels[0].unknowns;
+        assert!(
+            u.iter()
+                .any(|e| e.what.contains("$L__MISSING") && e.what.contains("branch")),
+            "expected an unknown naming the unresolved branch target, got {u:?}"
         );
     }
 }

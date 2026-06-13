@@ -37,8 +37,12 @@ pub struct Cfg {
     /// Statement indices of `call` instructions — surfaced by the
     /// report as a visible unknown (non-inlined callee).
     pub call_sites: Vec<usize>,
-    /// Branch targets that resolved to no label (malformed input);
-    /// empty on the whole committed corpus.
+    /// `bra` targets that matched no label captured in this kernel: the
+    /// edge is dropped, so the CFG may be incomplete. Either the label
+    /// is genuinely absent (malformed input) or the parser did not
+    /// register it — and since compilers do not emit dangling branches,
+    /// the latter is the likelier cause on real input. Surfaced as a
+    /// report unknown; empty on the whole committed corpus.
     pub unresolved_branches: Vec<(BlockId, Symbol)>,
 }
 

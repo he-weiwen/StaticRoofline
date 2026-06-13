@@ -957,6 +957,13 @@ they extend; no backlog item blocks another.
 - **Loop ID stability under heavy unrolling** (loop disappears):
   `diff` (Phase 2) reports removed-loop honestly; acceptance has no
   case where we pretend to match.
+- **Unresolved branch targets** (a `bra` matching no label captured in
+  the kernel) are surfaced as a report unknown — the dropped edge is
+  reported, not hidden, so the "never silent" rule holds for control
+  flow too. The message states only what happened and that it is
+  unexpected; it does not blame the input, because on compiler-produced
+  PTX (no dangling branches) the likelier cause is a label or branch
+  form the parser did not register. Empty on the whole committed corpus.
 - **Dependency creep**: the allowlist in §2 is the budget; serde-family +
   clap + cpp_demangle is already the bulk of compile time. Any proposed
   addition states what it replaces and why hand-rolling is worse.
