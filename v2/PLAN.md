@@ -113,6 +113,18 @@ item means editing this list in the same PR that implements it:
   counting;
 - `cvta`-provenance refinement of generic addressing — deferred until a
   fixture actually emits generic loads (none do today, verified).
+- by-value aggregate kernel parameters — a struct/array param lowered to
+  `.param .align N .b8 name[size]`, whose scalar fields the body reads via
+  `ld.param [name+offset]`. The param-table layout (size/align/field
+  offsets) is dropped at parse (PR 04 keeps name + type only), and the
+  trip matcher keys on the base param name with the offset ignored
+  (`trips.rs`, `Operand::Memory { base, .. }`) — so a field load would be
+  mis-bound to the aggregate's positional index, not flagged. Out of the
+  audience above (the corpus passes scalar dims + pointers as separate
+  named params) and with no effect on bytes/AI (`.param` loads are not
+  global traffic); deferred until a fixture emits one (none today,
+  verified). The fix when triggered is local: gate the `ld.param` match on
+  offset == 0, emit a named unknown otherwise.
 
 ## 2. Ground rules
 
@@ -479,7 +491,9 @@ outside this list is built until Phase 1 ships.
 **PR 04 — Parser → Module AST.** (~500 LOC; transcription of
 `lib/PTX/Parser.cpp`, extended to full programs)
 - Contents: recursive descent: module directives, kernel signatures +
-  param tables (name/type/offset), `.reg` decls, `.extern .shared .b8 name[]`
+  param tables (name + type; `.align` and `[size]` are parsed and dropped,
+  so by-value aggregate params are not field-resolvable — §1 anti-scope),
+  `.reg` decls, `.extern .shared .b8 name[]`
   (dynamic smem, empty brackets), body statements (mnemonic + modifier
   list + operands), `{ … }` statement blocks (inline-asm expansions and
   scoped `.reg` decls — verified present in the very first nvcc
