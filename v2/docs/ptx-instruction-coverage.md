@@ -1,0 +1,643 @@
+# PTX ISA instruction coverage audit
+
+How every instruction in the PTX ISA manual's Instructions chapter
+([§9.7](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#instructions))
+is handled by `src/classify.rs`; where handling is absent or wrong, a
+recommendation; and an explicit list of instructions that do not fit
+the tool's current model. Tables follow the manual's own order and
+hierarchy, one row per instruction (sections that define several
+instructions get one row each).
+
+Pinned to: **PTX ISA 9.3** (the docs page as fetched 2026-07-16) and
+`classify.rs` at commit `d58b305` (branch `prototype-arena-refactor`).
+
+**This document is a point-in-time audit, not a living inventory.**
+PLAN.md's self-auditing item (Phase 2) is explicit that the only
+durable inventory of what the tool handles is the one the tool
+generates (`tools/extract-opcodes.py` + the `capabilities` verb). When
+that lands, the per-instruction tables become its first expected
+output and this file reduces to the assessment sections. Until then,
+re-verify any table row against `classify.rs` before relying on it.
+
+## The tool's model (what "fits" means)
+
+The lexer and parser are generic: any statement parses to
+`mnemonic + modifiers + operands` with no per-mnemonic knowledge
+(`src/parse/parser.rs`). A dotted opcode like `cp.async.bulk.tensor`
+becomes mnemonic `cp` with modifiers `async`, `bulk`, `tensor` — so
+one `match` arm in `classify.rs` covers every dotted variant of a base
+mnemonic; the "Today" column names the arm where routing matters.
+
+A statement the parser cannot parse at all becomes `Stmt::Unparsed`
+and never reaches the classifier. Over the committed corpus that is
+policed by CI (`tests/parse-allowlist.txt`, empty today), but at
+`analyze` time the report pipeline skips `Unparsed` statements with no
+counter (`collect.rs`/`build.rs` both skip non-`Instr` statements) —
+this is the one hole in the "never dropped" guarantee; see the warts
+section. Verified instance: the ISA's optional dual-destination
+operand `d|p` (as in `setp ... p|q`, `match.all.sync d|p`,
+`elect.sync d|p`) does not parse.
+
+Past the parser, the model is deliberately simple. Each instruction
+maps to exactly **one** class:
+
+| Class | Meaning | Roofline contribution |
+|---|---|---|
+| `Flop { precision, flops }` | CUDA-core FP work; fma/mad = 2, others = 1, × packed lanes (`f16x2` = ×2) | flops, bucketed by precision |
+| `NonFlopArith { Conversion / Integer / Predicate / Move }` | `cvt`; integer/bit ops; compares & selects; `mov`/`cvta` | none (instruction-mix reporting only) |
+| `Memory { space, direction, bytes }` | `bytes = None` feeds the unquantified counter, never zero | bytes, bucketed by state space |
+| `Sync` | barriers, fences, warp collectives | none |
+| `Control` | branches, returns, calls, traps | none |
+| `Ignore` | provably zero flop/byte (hints, `nop`) | none, by policy |
+| `Unknown` | no arm matched | **counted and named in the report, never dropped** |
+
+and to exactly one `Measurement { kind, scope, count, predicated }`
+where `scope ∈ { PerThread, PerWarp }` (`core/measurement.rs`;
+everything classified today is `PerThread`, `PerWarp` is reserved for
+the tensor families). Counts are per-execution; loop-trip and launch
+multiplication happen at report time.
+
+So an instruction *fits* the model when it is one thing (arithmetic
+**or** memory **or** sync), its work belongs to one thread (or one
+warp), and its byte count is either in the instruction text or
+honestly unquantifiable. Instructions that break one of those
+assumptions are flagged **⚠ model misfit** in the tables and
+collected in [Instructions that do not fit the model](#instructions-that-do-not-fit-the-model).
+
+Two invariants police coverage: the verifier identity
+`classified + allowlisted-unknown = total` and the corpus coverage
+check (every fixture instruction classifies non-Unknown or is
+allowlisted; the allowlist is empty). The committed corpus exercises
+18 base mnemonics, all classified: `mov fma ld add mul st shl and
+setp bra or mad cvta ret shr cvt bar sub`.
+
+Row verdict vocabulary: **OK** (correct as-is), **OK (deferred)**
+(deliberately `Unknown` pending a Phase 2 family, with its tier),
+**Gap** (should have an arm today; recommendation given), **Wart**
+(handled, but with a defect), **⚠ model misfit** (needs a model
+decision, not just an arm).
+
+---
+
+## §9.7.1 Integer Arithmetic Instructions
+
+| § | Instruction | Today | Verdict & recommendation |
+|---|---|---|---|
+| 9.7.1.1 | `add` | `NonFlopArith::Integer` (shared arm with FP `add`; FP type modifier absent ⇒ integer) | OK — address math is not flops. |
+| 9.7.1.2 | `sub` | `Integer` (same mechanism) | OK. |
+| 9.7.1.3 | `mul` | `Integer` (incl. `.hi/.lo/.wide`) | OK. |
+| 9.7.1.4 | `mad` | `Integer` | OK — deliberate divergence from v1, which gave integer `mad` 2 flops of precision "Other"; documented and regression-tested. |
+| 9.7.1.5 | `clmad` | `Unknown` | Gap (harmless) — carry-less multiply-add, crypto/CRC niche. Recommend `Integer` (Tier 3). |
+| 9.7.1.6 | `mul24` | `Integer` | OK. |
+| 9.7.1.7 | `mad24` | `Integer` | OK. |
+| 9.7.1.8 | `sad` | `Integer` | OK. |
+| 9.7.1.9 | `div` | `Unknown` | **Wart** — `div` was reserved wholesale for the Phase 2 SFU policy (an FP concern), catching `div.s32`/`div.u64` as collateral. The existing FP-modifier check can route integer `div` to `Integer` today, exactly as `rem` already is. One-line fix (Tier 3). |
+| 9.7.1.10 | `rem` | `Integer` | OK — and the standing counterexample to the `div` wart. |
+| 9.7.1.11 | `abs` | `Integer` (via the FP-check arm) | OK. |
+| 9.7.1.12 | `neg` | `Integer` (same) | OK. |
+| 9.7.1.13 | `min` | `Integer` (same) | OK. |
+| 9.7.1.14 | `max` | `Integer` (same) | OK. |
+| 9.7.1.15 | `popc` | `Integer` | OK. |
+| 9.7.1.16 | `clz` | `Integer` | OK. |
+| 9.7.1.17 | `bfind` | `Integer` | OK. |
+| 9.7.1.18 | `fns` | `Unknown` | Gap (harmless) — find-nth-set-bit, rarely emitted. Recommend `Integer` (Tier 3). |
+| 9.7.1.19 | `brev` | `Integer` | OK. |
+| 9.7.1.20 | `bfe` | `Integer` | OK. |
+| 9.7.1.21 | `bfi` | `Integer` | OK. |
+| 9.7.1.22 | `szext` | `Integer` | OK. |
+| 9.7.1.23 | `bmsk` | `Integer` | OK. |
+| 9.7.1.24 | `dp4a` | `Integer` | ⚠ model misfit (mild) — a 4-way int8 dot product is 8 integer multiply-adds of real arithmetic throughput, but the roofline counts FP flops only. `Integer` is right under the current model; int8 inference workloads would need an integer-ops axis (see misfits §D). |
+| 9.7.1.25 | `dp2a` | `Integer` | Same as `dp4a`. |
+
+## §9.7.2 Extended-Precision Integer Arithmetic Instructions
+
+| § | Instruction | Today | Verdict & recommendation |
+|---|---|---|---|
+| 9.7.2.1 | `add.cc` | `Integer` (mnemonic `add` + `cc` modifier — incidental but correct routing) | OK. |
+| 9.7.2.2 | `addc` | `Unknown` (distinct mnemonic, no arm) | **Wart** — half of every carry chain classifies (`add.cc`), half doesn't. Recommend `Integer` (Tier 3); appears in `__int128`/wide-multiply code. |
+| 9.7.2.3 | `sub.cc` | `Integer` (via `sub`) | OK. |
+| 9.7.2.4 | `subc` | `Unknown` | Same wart as `addc`. Recommend `Integer` (Tier 3). |
+| 9.7.2.5 | `mad.cc` | `Integer` (via `mad`) | OK. |
+| 9.7.2.6 | `madc` | `Unknown` | Same wart. Recommend `Integer` (Tier 3). |
+
+## §9.7.3 Floating-Point Instructions
+
+| § | Instruction | Today | Verdict & recommendation |
+|---|---|---|---|
+| 9.7.3.1 | `testp` | `NonFlopArith::Predicate` | OK. |
+| 9.7.3.2 | `copysign` | `Flop` ×1 (verified) | OK — sign-bit transfer occupies the FP pipe; 1 flop per the Williams convention. |
+| 9.7.3.3 | `add` | `Flop` ×1 × lanes | OK — incl. the packed `f32x2` form (sm_100+) via the lane multiplier. |
+| 9.7.3.4 | `sub` | `Flop` ×1 × lanes | OK. |
+| 9.7.3.5 | `mul` | `Flop` ×1 × lanes | OK. |
+| 9.7.3.6 | `fma` | `Flop` ×2 × lanes | OK — the standard 2-flops-per-FMA convention. |
+| 9.7.3.7 | `mad` | `Flop` ×2 | OK — FP `mad` is fused on all modern targets; identical to `fma` for counting. |
+| 9.7.3.8 | `div` | `Unknown` (deliberate) | OK (deferred, Tier 1) — ⚠ model misfit: no single right flop count exists for divides (see misfits §D). Softmax denominators make it audience-critical. |
+| 9.7.3.9 | `abs` | `Flop` ×1 | OK — with the cross-check caveat: the planned NCU measured-flops formula (`2·ffma + fmul + fadd`) excludes it, so abs-heavy kernels will show a static-vs-measured gap. Static side is defensible; document when NCU import lands. |
+| 9.7.3.10 | `neg` | `Flop` ×1 | OK — same caveat as `abs`. |
+| 9.7.3.11 | `min` | `Flop` ×1 | OK — same caveat. |
+| 9.7.3.12 | `max` | `Flop` ×1 | OK — same caveat. |
+| 9.7.3.13 | `rcp` | `Unknown` (deliberate) | OK (deferred, Tier 1) — ⚠ model misfit §D; normalization layers hit it. |
+| 9.7.3.14 | `rcp.approx.ftz.f64` | `Unknown` (routes through the same `rcp` arm-to-be) | OK (deferred, Tier 1) — separate ISA section, same mnemonic; no extra work when the SFU arm lands. |
+| 9.7.3.15 | `sqrt` | `Unknown` (deliberate) | OK (deferred, Tier 1) — misfit §D. |
+| 9.7.3.16 | `rsqrt` | `Unknown` (deliberate) | OK (deferred, Tier 1) — layernorm/RMSNorm hit it; misfit §D. |
+| 9.7.3.17 | `rsqrt.approx.ftz.f64` | `Unknown` (same `rsqrt` routing) | OK (deferred, Tier 1). |
+| 9.7.3.18 | `sin` | `Unknown` (deliberate) | OK (deferred, Tier 1) — rare in the audience (RoPE tables are usually precomputed); comes free with the SFU family. |
+| 9.7.3.19 | `cos` | `Unknown` (deliberate) | OK (deferred, Tier 1) — same. |
+| 9.7.3.20 | `lg2` | `Unknown` (deliberate) | OK (deferred, Tier 1). |
+| 9.7.3.21 | `ex2` | `Unknown` (deliberate) | OK (deferred, Tier 1) — **the** softmax instruction; the first attention kernel makes it the top-ranked unknown. |
+| 9.7.3.22 | `tanh` | `Unknown` (deliberate) | OK (deferred, Tier 1) — GELU/activation paths. |
+
+## §9.7.4 Half Precision Floating-Point Instructions
+
+| § | Instruction | Today | Verdict & recommendation |
+|---|---|---|---|
+| 9.7.4.1 | `add` | `Flop` ×1 × lanes (`f16x2`/`bf16x2` ⇒ ×2) | OK. |
+| 9.7.4.2 | `sub` | `Flop` ×1 × lanes | OK. |
+| 9.7.4.3 | `mul` | `Flop` ×1 × lanes | OK. |
+| 9.7.4.4 | `fma` | `Flop` ×2 × lanes (verified: `fma.rn.f16x2` = 4 flops) | OK. |
+| 9.7.4.5 | `neg` | `Flop` ×1 × lanes | OK (NCU-formula caveat as §9.7.3.10). |
+| 9.7.4.6 | `abs` | `Flop` ×1 × lanes | OK (same caveat). |
+| 9.7.4.7 | `min` | `Flop` ×1 × lanes | OK (same caveat). |
+| 9.7.4.8 | `max` | `Flop` ×1 × lanes | OK (same caveat). |
+| 9.7.4.9 | `tanh` | `Unknown` (SFU deferral) | OK (deferred, Tier 1) — half-precision fast-activation path. |
+| 9.7.4.10 | `ex2` | `Unknown` (SFU deferral) | OK (deferred, Tier 1) — `ex2.approx.f16x2` is the fast-softmax core in attention kernels; highest-value SFU entry together with the f32 form. |
+
+## §9.7.5 Mixed Precision Floating-Point Instructions
+
+| § | Instruction | Today | Verdict & recommendation |
+|---|---|---|---|
+| 9.7.5.1 | `add` (e.g. `add.rn.f32.bf16`) | `Flop` ×1, bucketed **f32** (first FP modifier = destination type; verified) | OK — mixed ops land in the accumulator's precision bucket, which is what roofline tables want. Recommend a comment in `fp_precision_and_lanes` pinning the "PTX writes dst type first" assumption it relies on. |
+| 9.7.5.2 | `sub` | Same | OK — same recommendation. |
+| 9.7.5.3 | `fma` | `Flop` ×2, bucketed by dst type | OK — same recommendation. |
+
+## §9.7.6 Comparison and Selection Instructions
+
+| § | Instruction | Today | Verdict & recommendation |
+|---|---|---|---|
+| 9.7.6.1 | `set` | `Predicate` | OK — produces a 0/1 value in a data register, but comparisons are not flops under the convention. |
+| 9.7.6.2 | `setp` | `Predicate` | OK for the common form. **Wart**: the optional dual-destination form `setp ... p|q, a, b` hits the parser-level `d|p` gap (verified `Unparsed`) and is silently skipped at analyze time. nvcc rarely emits it; fix with the shared `d|p` operand form (Tier 2 rider). |
+| 9.7.6.3 | `selp` | `Predicate` | OK. |
+| 9.7.6.4 | `slct` | `Predicate` | OK. |
+
+## §9.7.7 Half Precision Comparison Instructions
+
+| § | Instruction | Today | Verdict & recommendation |
+|---|---|---|---|
+| 9.7.7.1 | `set` (f16 variants) | `Predicate` (same arm) | OK. |
+| 9.7.7.2 | `setp` (f16 variants) | `Predicate` (same arm) | OK (same `d|p` caveat). |
+
+## §9.7.8 Logic and Shift Instructions
+
+| § | Instruction | Today | Verdict & recommendation |
+|---|---|---|---|
+| 9.7.8.1 | `and` | `Integer`, or `Predicate` when `.pred` | OK — the `.pred` split is correct and tested. |
+| 9.7.8.2 | `or` | Same | OK. |
+| 9.7.8.3 | `xor` | Same | OK. |
+| 9.7.8.4 | `not` | Same | OK. |
+| 9.7.8.5 | `cnot` | `Unknown` | Gap (harmless) — C-style boolean not; rarely emitted. Recommend `Integer` (Tier 3). |
+| 9.7.8.6 | `lop3` | `Integer` | OK. |
+| 9.7.8.7 | `shf` | `Unknown` (verified) | **Gap worth closing** — funnel shift; nvcc emits `shf.l/.r` for 64-bit shifts and rotates (hashing, PRNG, bit-packing). Recommend `Integer` (Tier 3, the likeliest of the missing integer ops to appear first). |
+| 9.7.8.8 | `shl` | `Integer` | OK. |
+| 9.7.8.9 | `shr` | `Integer` | OK. |
+
+## §9.7.9 Data Movement and Conversion Instructions
+
+§9.7.9.1 (Cache Operators) and §9.7.9.2 (Cache Eviction Priority
+Hints) define modifiers, not instructions; they are transparent to
+requested-bytes accounting by construction (verified:
+`ld.global.nc.L2::128B.b128` counts 16 bytes), which is correct — a
+cache hint changes where bytes are served from, not how many are
+requested.
+
+| § | Instruction | Today | Verdict & recommendation |
+|---|---|---|---|
+| 9.7.9.3 | `mov` | `NonFlopArith::Move` | OK — includes special-register reads (`mov.u32 %r, %tid.x`). |
+| 9.7.9.4 | `mov` (vector pack/unpack form) | `Move` (same arm) | OK. |
+| 9.7.9.5 | `shfl` (deprecated) | `Sync` | OK — same arm as `shfl.sync`; zero DRAM bytes is the correct accounting for intra-warp exchange. |
+| 9.7.9.6 | `shfl.sync` | `Sync` | OK. |
+| 9.7.9.7 | `prmt` | `Integer` | OK. |
+| 9.7.9.8 | `ld` | `Memory { space, Load, width × v2/v4/v8 }` | OK — space from modifiers with `Generic` as its own honest bucket (`cvta`-provenance refinement is documented anti-scope until a fixture emits generic loads); `.shared::cta` folds into `Shared`, `.shared::cluster` distinct; `volatile`/cache-op/eviction modifiers transparent. |
+| 9.7.9.9 | `ld.global.nc` | `Memory { Global, Load, bytes }` (via the `ld` arm; verified) | OK. |
+| 9.7.9.10 | `ldu` | `Memory { Global, Load, bytes }` | OK. |
+| 9.7.9.11 | `st` | `Memory { space, Store, bytes }` | OK. |
+| 9.7.9.12 | `st.async` | `Memory` store via the `st` arm (verified: `st.async.shared::cluster.b32` ⇒ `{SharedCluster, Store, 4}`) | OK for byte accounting. ⚠ model misfit (mild, §B) — the bytes land in a *remote* CTA's shared memory with mbarrier completion; per-thread attribution is still right, but a future cluster-traffic view would need the remote/local distinction the modifier already carries. No action until a cluster fixture exists. |
+| 9.7.9.13 | `multimem.st.async` | `Unknown` | OK (deferred, Tier 4) — ⚠ misfit §F: one store fans out to N GPUs' memory. |
+| 9.7.9.14 | `st.bulk` | `Memory { Shared, Store, bytes: None }` → unquantified counter (verified) | OK — the size is an operand, not a type modifier, so `UnquantifiedBytes` is the honest result. Recommend quantifying the immediate-operand case when the bulk-copy family lands (Tier 2). |
+| 9.7.9.15 | `multimem.ld_reduce` | `Unknown` | OK (deferred, Tier 4) — ⚠ misfit §A+§F: a load *and* a reduction across N GPUs' replicas in one instruction. |
+| 9.7.9.15 | `multimem.st` | `Unknown` | OK (deferred, Tier 4) — misfit §F. |
+| 9.7.9.15 | `multimem.red` | `Unknown` | OK (deferred, Tier 4) — misfit §A+§F. |
+| 9.7.9.16 | `prefetch` | `Ignore` | OK — a prefetch duplicates a later architectural load; counting it would double-count requested bytes. (Genuinely ambiguous under a "DRAM traffic" reading — a prefetch of never-loaded data is real traffic — but the tool's contract is requested bytes, and there `Ignore` is right.) |
+| 9.7.9.16 | `prefetchu` | `Ignore` | OK — same. |
+| 9.7.9.17 | `applypriority` | `Ignore` | OK — cache-state hint. |
+| 9.7.9.18 | `discard` | `Ignore` | OK — invalidates lines without writeback; no data movement. |
+| 9.7.9.19 | `createpolicy` | `Unknown` | Gap (harmless) — register-only construction of a cache-policy descriptor. Recommend `Ignore` (Tier 3). |
+| 9.7.9.20 | `isspacep` | `Predicate` | OK. |
+| 9.7.9.21 | `cvta` | `Move` | OK — address-space cast, not a value conversion; tested. |
+| 9.7.9.22 | `cvt` | `Conversion` | OK — and future-proof: every format including FP8/FP6/FP4 (`e4m3`, `e5m2`, `e2m1`, …) lands here with no per-format code. Conversions as their own kind is load-bearing for the S8 precision audit (8 `cvt` per k2 main-loop iteration). |
+| 9.7.9.23 | `cvt.pack` | `Conversion` (mnemonic `cvt` + `pack` modifier) | OK. |
+| 9.7.9.24 | `mapa` | `Unknown` | Gap (harmless) — maps an address to a peer CTA's shared memory. Recommend `Move` (Tier 3, with cluster support). |
+| 9.7.9.25 | `getctarank` | `Unknown` | Gap (harmless) — recommend `Integer` (Tier 3). |
+
+### §9.7.9.26 Asynchronous copy
+
+All rows below route through the bare `cp` (or `multimem`) mnemonic
+and classify `Unknown` today — deliberately: the async-copy family is
+a named Phase 2 item, and `Unknown` is visible and counted. The rows
+give the target class each should land as.
+
+| § | Instruction | Today | Verdict & recommendation |
+|---|---|---|---|
+| 9.7.9.26.3.1 | `cp.async` | `Unknown` (verified) | OK (deferred, **Tier 1**) — Ampere async pipelines; everything Triton emits for sm_80+ uses it. Target: `Memory`-like copy record, global→shared, bytes from the explicit size operand (verified statically present in k12). ⚠ mild ambiguity: with the optional `src-size < cp-size` zero-fill form, global reads `src-size` bytes but shared receives `cp-size`; pick one side per space and document (misfit §C footnote). |
+| 9.7.9.26.3.2 | `cp.async.commit_group` | `Unknown` (via `cp`) | OK (deferred, Tier 1) — target `Sync`; moves no bytes (v1 already made this distinction). |
+| 9.7.9.26.3.3 | `cp.async.wait_group` | `Unknown` (via `cp`) | OK (deferred, Tier 1) — target `Sync`. |
+| 9.7.9.26.3.3 | `cp.async.wait_all` | `Unknown` (via `cp`) | OK (deferred, Tier 1) — target `Sync`. |
+| 9.7.9.26.4.1 | `cp.async.bulk` | `Unknown` | OK (deferred, Tier 2) — ⚠ misfit §B+§C: issued by one thread (or one elected thread) for a CTA-scale transfer — per-thread count multiplication would overcount by orders of magnitude; size may be a runtime register (→ `UnquantifiedBytes`). |
+| 9.7.9.26.4.2 | `cp.reduce.async.bulk` | `Unknown` | OK (deferred, Tier 2) — ⚠ misfit §A+§B: bulk copy *and* reduction arithmetic in one instruction. |
+| 9.7.9.26.4.3 | `cp.async.bulk.prefetch` | `Unknown` | OK (deferred, Tier 2) — target `Ignore`, consistent with the `prefetch` policy. |
+| 9.7.9.26.4.4 | `multimem.cp.async.bulk` | `Unknown` | OK (deferred, Tier 4) — misfit §F. |
+| 9.7.9.26.4.5 | `multimem.cp.reduce.async.bulk` | `Unknown` | OK (deferred, Tier 4) — misfit §A+§F. |
+| 9.7.9.26.5.2 | `cp.async.bulk.tensor` | `Unknown` | OK (deferred, Tier 2) — ⚠⚠ misfit §B+§C: TMA. Bytes live in a host-side tensor-map descriptor, **permanently unknowable from the PTX text**; `UnquantifiedBytes` is the correct end state, not a stopgap (unless a `--bind`-style flag supplies the map). Single-thread-issued, CTA-scale. |
+| 9.7.9.26.5.3 | `cp.reduce.async.bulk.tensor` | `Unknown` | OK (deferred, Tier 2) — same, plus misfit §A (reduction). |
+| 9.7.9.26.5.4 | `cp.async.bulk.prefetch.tensor` | `Unknown` | OK (deferred, Tier 2) — target `Ignore` per the prefetch policy. |
+| 9.7.9.26.6.1 | `cp.async.bulk.commit_group` | `Unknown` | OK (deferred, Tier 2) — target `Sync`. |
+| 9.7.9.26.6.2 | `cp.async.bulk.wait_group` | `Unknown` | OK (deferred, Tier 2) — target `Sync`. |
+| 9.7.9.27 | `tensormap.replace` | `Unknown` | Gap (harmless) — edits a tensor-map descriptor in memory; negligible traffic. Recommend `Ignore` with a comment, or a small fixed `Memory` write — decide when TMA lands (Tier 3). |
+
+## §9.7.10 Fabric Instructions
+
+New in recent ISA revisions (multi-node NVLink fabric). All are
+`Unknown` today via the `fabric` mnemonic — correct: cross-GPU
+transfers are a different roofline with different machine tables
+(misfit §F). All Tier 4.
+
+| § | Instruction | Today | Verdict & recommendation |
+|---|---|---|---|
+| 9.7.10.5.1 | `fabric.try_get` | `Unknown` | OK (deferred, Tier 4) — remote read over the fabric. |
+| 9.7.10.5.2 | `fabric.try_put` | `Unknown` | OK (deferred, Tier 4) — remote write. |
+| 9.7.10.5.3 | `fabric.try_red` | `Unknown` | OK (deferred, Tier 4) — misfit §A+§F (remote reduction). |
+| 9.7.10.5.4 | `fabric.try_pullred` | `Unknown` | OK (deferred, Tier 4) — misfit §A+§F. |
+| 9.7.10.5.5 | `fabric.submit` | `Unknown` | OK (deferred, Tier 4) — target `Sync` if ever handled. |
+| 9.7.10.5.6 | `fabric.wait` | `Unknown` | OK (deferred, Tier 4) — target `Sync` if ever handled. |
+
+## §9.7.11 Texture Instructions
+
+| § | Instruction | Today | Verdict & recommendation |
+|---|---|---|---|
+| 9.7.11.3 | `tex` | `Unknown` (verified) | OK (deferred, Tier 4) — an *improvement* over v1, which `Ignore`d it: a texture fetch moves real bytes, so silently zeroing corrupted AI. ⚠ misfit §F: footprint is coordinate-dependent and the fetch includes fixed-function filtering arithmetic — neither plain bytes nor flops. `Unknown` is the honest state for an out-of-audience family. |
+| 9.7.11.4 | `tld4` | `Unknown` | OK (deferred, Tier 4) — same reasoning. |
+| 9.7.11.5 | `txq` | `Unknown` | OK (deferred, Tier 4) — a metadata query; target `Ignore` if the family is ever handled. |
+| 9.7.11.6 | `istypep` | `Unknown` | Gap (harmless) — a predicate query that happens to live in the texture section. Recommend `Predicate` (Tier 3 one-liner). |
+
+## §9.7.12 Surface Instructions
+
+| § | Instruction | Today | Verdict & recommendation |
+|---|---|---|---|
+| 9.7.12.1 | `suld` | `Unknown` | OK (deferred, Tier 4) — moves bytes (v1 wrongly `Ignore`d it); descriptor-held geometry (misfit §C). |
+| 9.7.12.2 | `sust` | `Unknown` | OK (deferred, Tier 4) — same. |
+| 9.7.12.3 | `sured` | `Unknown` | OK (deferred, Tier 4) — misfit §A (reduction on memory) + §C. |
+| 9.7.12.4 | `suq` | `Unknown` | OK (deferred, Tier 4) — query; target `Ignore`. |
+
+## §9.7.13 Control Flow Instructions
+
+| § | Instruction | Today | Verdict & recommendation |
+|---|---|---|---|
+| 9.7.13.1 | `{}` | Parser-level block structure; never reaches the classifier | OK — the right layer. |
+| 9.7.13.2 | `@` | Parser-level; sets the `predicated` bit on the guarded instruction's `Measurement`, which propagates as `≤` (at-most) bounds | OK — this is the model's designed answer to divergence: bounds, not probabilities. |
+| 9.7.13.3 | `bra` | `Control` | OK. |
+| 9.7.13.4 | `brx.idx` | `Control` (mnemonic `brx`) | OK — and CFG-side, unresolved `.branchtargets` surface as a report unknown (commit `d58b305`), so indirect branches degrade honestly. |
+| 9.7.13.5 | `call` | `Control` | OK at the classifier layer. ⚠ misfit §E: flops/bytes inside the callee are not attributed to the call site. Fine while the corpus is fully-inlined nvcc output; recommend a report-level named unknown when a kernel calls a function whose body the module doesn't contain (extern), so the gap is visible the day it matters. |
+| 9.7.13.6 | `ret` | `Control` | OK. |
+| 9.7.13.7 | `exit` | `Control` | OK. |
+
+## §9.7.14 Parallel Synchronization and Communication Instructions
+
+| § | Instruction | Today | Verdict & recommendation |
+|---|---|---|---|
+| 9.7.14.1 | `bar` | `Sync` | OK. Note `bar.red` also computes a predicate reduction across the CTA — a mild §A dual-nature; `Sync` is the right roofline treatment (the reduction is predicate work, never flops). |
+| 9.7.14.1 | `barrier` | `Sync` | OK — same family, same note for `barrier.red`. |
+| 9.7.14.2 | `bar.warp.sync` | `Sync` (via `bar`) | OK. |
+| 9.7.14.3 | `barrier.cluster` | `Sync` (via `barrier`) | OK. |
+| 9.7.14.4 | `membar` | `Sync` | OK. |
+| 9.7.14.4 | `fence` | `Sync` | OK — all variants (`fence.proxy.*`, `fence.mbarrier_init`, …) via modifier transparency. |
+| 9.7.14.5 | `atom` | `Unknown` (verified; deliberate) | OK (deferred, **Tier 1**) — ⚠⚠ misfit §A, the canonical case: `atom.global.add.f32` is a load, a store, *and* an FP add in one instruction; one `OpClass` cannot say so. Recommended landing policy: v1's documented convention (count read+write bytes, no flops), upgraded to two `Measurement`s per instruction only if a precision audit ever needs atomic flops. Contention/serialization stays NCU's side (anti-scope). |
+| 9.7.14.6 | `red` | `Unknown` (deliberate) | OK (deferred, Tier 1) — misfit §A; v1 policy: store-side bytes only (reads are implicit). |
+| 9.7.14.7 | `red.async` | `Unknown` (via `red`) | OK (deferred, Tier 2) — misfit §A + async completion; cluster reductions. |
+| 9.7.14.8 | `multimem.red.async` | `Unknown` | OK (deferred, Tier 4) — misfit §A+§F. |
+| 9.7.14.9 | `vote` (deprecated) | `Sync` | OK. |
+| 9.7.14.10 | `vote.sync` | `Sync` | OK. |
+| 9.7.14.11 | `match.sync` | `Sync` | OK for the plain form (verified). **Wart**: `match.all.sync` with the optional `d|p` destination hits the parser gap (verified `Unparsed`) — fix with the shared `d|p` operand form (Tier 2 rider). |
+| 9.7.14.12 | `activemask` | `Sync` | OK. |
+| 9.7.14.13 | `redux.sync` | `Sync` | OK, with a flag: ⚠ misfit §A (mild) — it computes a warp-wide arithmetic reduction (integer ops; `f32` min/max on newer targets), which vanishes into `Sync`. Consistent with the convention (min/max would be 1 flop per *warp*, negligible), but the decision should be stated when the SFU/pipe axis lands. |
+| 9.7.14.14 | `griddepcontrol` | `Ignore` | OK — defensible; arguably `Sync` (it orders dependent grids), but nothing downstream distinguishes them. Cosmetic; keep. |
+| 9.7.14.15 | `elect.sync` | **parser-level `Unparsed`** (the `d|p` destination doesn't parse; verified) — would be `Unknown` even if parsed | **Gap worth closing** — warp-specialized Hopper kernels (CUTLASS, Triton) emit it routinely, and today it vanishes from the report entirely (the silent-skip hole). Recommend: `d|p` operand form in the parser + one-line `Sync` arm (Tier 2). |
+| 9.7.14.16.12 | `mbarrier.init` | `Sync` (via `mbarrier`) | OK — technically writes 8 bytes of shared memory to initialize the object; negligible by construction, `Sync` is right. |
+| 9.7.14.16.13 | `mbarrier.inval` | `Sync` | OK. |
+| 9.7.14.16.14 | `mbarrier.expect_tx` | `Sync` | OK. |
+| 9.7.14.16.15 | `mbarrier.complete_tx` | `Sync` | OK. |
+| 9.7.14.16.16 | `mbarrier.arrive` | `Sync` | OK. |
+| 9.7.14.16.17 | `mbarrier.arrive_drop` | `Sync` | OK. |
+| 9.7.14.16.18 | `cp.async.mbarrier.arrive` | `Unknown` (via `cp`) | OK (deferred, Tier 1 rider) — target `Sync`; the `cp.async` arm must special-case it before the transfer variants. |
+| 9.7.14.16.19 | `mbarrier.test_wait` | `Sync` | OK. |
+| 9.7.14.16.19 | `mbarrier.try_wait` | `Sync` | OK. |
+| 9.7.14.16.20 | `mbarrier.pending_count` | `Sync` | OK. |
+| 9.7.14.16.21 | `mbarrier.check_layout` | `Sync` (via `mbarrier` — future variants land free) | OK. |
+| 9.7.14.17 | `tensormap.cp_fenceproxy` | `Unknown` | Gap (harmless) — target `Sync` (Tier 3). |
+| 9.7.14.18 | `clusterlaunchcontrol.try_cancel` | `Unknown` | OK (deferred, Tier 3) — persistent-kernel launch control; target `Sync`. Note: kernels built around it re-derive their work assignment in a loop the trip-count model will honestly fail on — an audience question before a classifier one. |
+| 9.7.14.19 | `clusterlaunchcontrol.query_cancel` | `Unknown` | OK (deferred, Tier 3) — target `Integer`/`Move` (unpacks a result handle). |
+
+## §9.7.15 Warp Level Matrix Multiply-Accumulate Instructions
+
+§9.7.15.1–.3 (shapes, data types, block scaling) are context sections.
+Everything below is `Unknown` today via the `wmma`/`mma`/`ldmatrix`/
+`stmatrix`/`movmatrix` mnemonics — the named Phase 2 tensor item,
+**Tier 1**. All entries share one structural prerequisite: per-warp
+scope (`Scope::PerWarp` exists and is reserved for exactly this).
+
+| § | Instruction | Today | Verdict & recommendation |
+|---|---|---|---|
+| 9.7.15.4.3 | `wmma.load` | `Unknown` | OK (deferred, Tier 1) — target `Memory` **PerWarp** (fragment load), 0 flops. The Phase 2 item pins v1's worst bug as a regression test: v1 matched bare `wmma` and gave `wmma.load` an MMA shape — 8192 phantom FLOPs per load. Role must split on the first modifier. |
+| 9.7.15.4.4 | `wmma.store` | `Unknown` | OK (deferred, Tier 1) — target `Memory` PerWarp, store side. |
+| 9.7.15.4.5 | `wmma.mma` | `Unknown` | OK (deferred, Tier 1) — target `Flop` PerWarp, 2·M·N·K per the shape modifier. |
+| 9.7.15.5.14 | `mma` | `Unknown` (verified) | OK (deferred, **Tier 1 — the single most important missing instruction**) — every tensor-core GEMM on sm_80/sm_89 emits `mma.sync`; target `Flop` PerWarp 2·M·N·K, precision from the D/A type modifiers (shape grammar verified in the backlog item). ⚠ misfit §D for two sub-cases: integer `mma` (s8/u8/b1 — int-ops, not flops) and block-scaled kinds (scale-factor arithmetic beyond 2·M·N·K); pick and document conventions when the arm lands. |
+| 9.7.15.5.15 | `ldmatrix` | `Unknown` | OK (deferred, Tier 1) — target `Memory{Shared, Load}` PerWarp; bytes = x1/x2/x4 × fragment size (grammar verified in k14). |
+| 9.7.15.5.16 | `stmatrix` | `Unknown` | OK (deferred, Tier 1) — target `Memory{Shared, Store}` PerWarp. |
+| 9.7.15.5.17 | `movmatrix` | `Unknown` | OK (deferred, Tier 2) — register-file transpose, zero bytes; target `Sync` (warp-collective register exchange) or a PerWarp `Move`; either is defensible, document the choice. |
+| 9.7.15.6.3 | `mma.sp` / `mma.sp::ordered_metadata` | `Unknown` (via `mma`) | OK (deferred, Tier 2) — ⚠ misfit §D: 2:4-sparse flop counting is genuinely ambiguous (dense 2·M·N·K, matching NCU's convention, vs effective half). Decide with a fixture and NCU cross-check, and label the choice in the report. |
+
+## §9.7.16 Asynchronous Warpgroup Level Matrix Multiply-Accumulate Instructions
+
+All `Unknown` today via the `wgmma` mnemonic. Tier 2 (Hopper: Triton
+and CUTLASS emit these on H100).
+
+| § | Instruction | Today | Verdict & recommendation |
+|---|---|---|---|
+| 9.7.16.5.2 | `wgmma.mma_async` | `Unknown` | OK (deferred, Tier 2) — ⚠⚠ misfit §B: executed by a *warpgroup* (4 warps); `Scope` has no such variant — the enum must grow before this lands. Also misfit §E: the A/B operands can stream directly from shared memory via descriptors, so its smem traffic has no `ld` instructions to count — decide whether the arm emits implicit smem bytes. Flops = 2·M·N·K per warpgroup. |
+| 9.7.16.6.3 | `wgmma.mma_async.sp` | `Unknown` | OK (deferred, Tier 2) — same, plus the sparse convention (misfit §D). |
+| 9.7.16.7.1 | `wgmma.fence` | `Unknown` | OK (deferred, Tier 2) — target `Sync`. |
+| 9.7.16.7.2 | `wgmma.commit_group` | `Unknown` | OK (deferred, Tier 2) — target `Sync`. |
+| 9.7.16.7.3 | `wgmma.wait_group` | `Unknown` | OK (deferred, Tier 2) — target `Sync`. |
+
+## §9.7.17 TensorCore 5th Generation Family Instructions
+
+All `Unknown` today via the `tcgen05` mnemonic. Tier 2, additionally
+gated: `data/machine/` stops at sm_90, so there is no verdict table to
+compare Blackwell flops against yet — classify-then-compare should
+land together with sm_100 machine tables. Two family-wide misfits:
+**tensor memory** is a fifth memory space the `Space` enum doesn't
+have (§B/§C), and most operations are issued by a *single thread* on
+behalf of a CTA or CTA pair (§B) — per-thread multiplication would be
+wildly wrong.
+
+| § | Instruction | Today | Verdict & recommendation |
+|---|---|---|---|
+| 9.7.17.7.1 | `tcgen05.alloc` | `Unknown` | OK (deferred, Tier 2) — allocates tensor-memory columns: a per-CTA resource like `.shared`, so the eventual home is the resource report (alongside the `shared memory [static]` line), not an op class. Target `Sync` for the instruction itself. |
+| 9.7.17.7.1 | `tcgen05.dealloc` | `Unknown` | OK (deferred, Tier 2) — target `Sync`. |
+| 9.7.17.7.1 | `tcgen05.relinquish_alloc_permit` | `Unknown` | OK (deferred, Tier 2) — target `Sync`. |
+| 9.7.17.8.3 | `tcgen05.ld` | `Unknown` | OK (deferred, Tier 2) — ⚠ misfit §B: tensor-memory→register load, warp-collective; needs the new space and PerWarp scope. |
+| 9.7.17.8.4 | `tcgen05.st` | `Unknown` | OK (deferred, Tier 2) — same, store side. |
+| 9.7.17.8.5 | `tcgen05.wait` | `Unknown` | OK (deferred, Tier 2) — target `Sync`. |
+| 9.7.17.9.2 | `tcgen05.cp` | `Unknown` | OK (deferred, Tier 2) — ⚠ misfit §B+§C: single-thread-issued shared→tensor-memory copy, and the optional decompression modes (4-bit/6-bit → 8-bit) make bytes-read ≠ bytes-written; pick a side per space and document. |
+| 9.7.17.9.3 | `tcgen05.shift` | `Unknown` | OK (deferred, Tier 2) — tensor-memory row shift; data movement within the new space. |
+| 9.7.17.10.9.1 | `tcgen05.mma` | `Unknown` | OK (deferred, Tier 2) — ⚠⚠ misfit §B at its most extreme: a single thread issues an MMA executed for a CTA (or CTA *pair* with `cta_group::2`); no current scope expresses "per-CTA-pair, issued once". Also §E (descriptor-sourced smem/tmem operands) and §D (block-scaled `mxf4`/`mxf8f6f4` kinds). The flop math itself is still 2·M·N·K — the model question is *whose* flops. |
+| 9.7.17.10.9.2 | `tcgen05.mma.sp` | `Unknown` | OK (deferred, Tier 2) — plus the sparse convention (§D). |
+| 9.7.17.10.9.3 | `tcgen05.mma.ws` | `Unknown` | OK (deferred, Tier 2) — weight-stationary variant; same misfits. |
+| 9.7.17.10.9.4 | `tcgen05.mma.ws.sp` | `Unknown` | OK (deferred, Tier 2) — same. |
+| 9.7.17.11.1 | `tcgen05.fence` | `Unknown` | OK (deferred, Tier 2) — target `Sync`. |
+| 9.7.17.12.1 | `tcgen05.commit` | `Unknown` | OK (deferred, Tier 2) — target `Sync`. |
+
+## §9.7.18 Stack Manipulation Instructions
+
+| § | Instruction | Today | Verdict & recommendation |
+|---|---|---|---|
+| 9.7.18.1 | `stacksave` | `Unknown` | Gap (harmless) — recommend `Move` (Tier 3). Rare in performance kernels. |
+| 9.7.18.2 | `stackrestore` | `Unknown` | Gap (harmless) — recommend `Move` (Tier 3). |
+| 9.7.18.3 | `alloca` | `Unknown` | Gap (harmless) — recommend `Move` (Tier 3). Note: it creates a runtime-sized local-memory footprint, but the traffic that matters still appears as `ld.local`/`st.local`, which are counted — so no bytes are lost by classifying the `alloca` itself as bookkeeping. |
+
+## §9.7.19 Video Instructions
+
+All `Unknown` today (distinct mnemonics, no arms). Legacy fixed-point
+video ops; modern compilers essentially never emit them (`dp4a`/`dp2a`
+superseded the common uses). All Tier 4; if one ever appears, each is
+a one-line `Integer` arm (`vset*` → `Predicate`-flavored `Integer`,
+they produce 0/1 results).
+
+### §9.7.19.1 Scalar Video Instructions
+
+| § | Instruction | Today | Verdict & recommendation |
+|---|---|---|---|
+| 9.7.19.1.1 | `vadd` | `Unknown` | OK (deferred, Tier 4) — target `Integer`. |
+| 9.7.19.1.1 | `vsub` | `Unknown` | OK (deferred, Tier 4) — target `Integer`. |
+| 9.7.19.1.1 | `vabsdiff` | `Unknown` | OK (deferred, Tier 4) — target `Integer`. |
+| 9.7.19.1.1 | `vmin` | `Unknown` | OK (deferred, Tier 4) — target `Integer`. |
+| 9.7.19.1.1 | `vmax` | `Unknown` | OK (deferred, Tier 4) — target `Integer`. |
+| 9.7.19.1.2 | `vshl` | `Unknown` | OK (deferred, Tier 4) — target `Integer`. |
+| 9.7.19.1.2 | `vshr` | `Unknown` | OK (deferred, Tier 4) — target `Integer`. |
+| 9.7.19.1.3 | `vmad` | `Unknown` | OK (deferred, Tier 4) — target `Integer`. |
+| 9.7.19.1.4 | `vset` | `Unknown` | OK (deferred, Tier 4) — target `Integer`. |
+
+### §9.7.19.2 SIMD Video Instructions
+
+| § | Instruction | Today | Verdict & recommendation |
+|---|---|---|---|
+| 9.7.19.2.1 | `vadd2` | `Unknown` | OK (deferred, Tier 4) — target `Integer`. |
+| 9.7.19.2.1 | `vsub2` | `Unknown` | OK (deferred, Tier 4) — target `Integer`. |
+| 9.7.19.2.1 | `vavrg2` | `Unknown` | OK (deferred, Tier 4) — target `Integer`. |
+| 9.7.19.2.1 | `vabsdiff2` | `Unknown` | OK (deferred, Tier 4) — target `Integer`. |
+| 9.7.19.2.1 | `vmin2` | `Unknown` | OK (deferred, Tier 4) — target `Integer`. |
+| 9.7.19.2.1 | `vmax2` | `Unknown` | OK (deferred, Tier 4) — target `Integer`. |
+| 9.7.19.2.2 | `vset2` | `Unknown` | OK (deferred, Tier 4) — target `Integer`. |
+| 9.7.19.2.3 | `vadd4` | `Unknown` | OK (deferred, Tier 4) — target `Integer`. |
+| 9.7.19.2.3 | `vsub4` | `Unknown` | OK (deferred, Tier 4) — target `Integer`. |
+| 9.7.19.2.3 | `vavrg4` | `Unknown` | OK (deferred, Tier 4) — target `Integer`. |
+| 9.7.19.2.3 | `vabsdiff4` | `Unknown` | OK (deferred, Tier 4) — target `Integer`. |
+| 9.7.19.2.3 | `vmin4` | `Unknown` | OK (deferred, Tier 4) — target `Integer`. |
+| 9.7.19.2.3 | `vmax4` | `Unknown` | OK (deferred, Tier 4) — target `Integer`. |
+| 9.7.19.2.4 | `vset4` | `Unknown` | OK (deferred, Tier 4) — target `Integer`. |
+
+## §9.7.20 Miscellaneous Instructions
+
+| § | Instruction | Today | Verdict & recommendation |
+|---|---|---|---|
+| 9.7.20.1 | `brkpt` | `Control` | OK. |
+| 9.7.20.2 | `nanosleep` | `Unknown` (verified) | Gap (harmless) — latency-only, zero flop/byte. Recommend `Ignore` (Tier 3). |
+| 9.7.20.3 | `pmevent` | `Unknown` | Gap (harmless) — profiler-event trigger. Recommend `Ignore` (Tier 3). |
+| 9.7.20.4 | `trap` | `Control` | OK. |
+| 9.7.20.5 | `setmaxnreg` | `Unknown` (verified) | Gap — register-file rebalancing hint, zero flop/byte, **but** warp-specialized Hopper kernels emit `setmaxnreg.inc/.dec` as standard boilerplate, so it arrives together with `wgmma`/`elect.sync`. Recommend `Ignore`, bundled into the Tier 2 Hopper sweep to keep sm_90 reports clean. |
+
+## Not in the ISA at all
+
+| Mnemonic | Today | Verdict & recommendation |
+|---|---|---|
+| `ldg` | `Memory { Global, Load }` | **Dead arm** — `ldg` is not a PTX instruction (the ISA spells it `ld.global.nc`; zero occurrences of `ldg` in the manual). Inherited from v1; it can never match valid PTX. Recommend deleting it, or keeping only with a comment naming a real producer that emits it. |
+
+---
+
+## Instructions that do not fit the model
+
+The classes above assume an instruction is one thing, owned by one
+thread (or warp), with statically visible bytes. Six recurring ways
+the ISA breaks those assumptions — each is a *decision to make*, not
+just an arm to add. Rows above cite these by letter.
+
+**§A — one instruction, two natures (arithmetic ⊗ memory).**
+`atom`, `red`, `red.async`, `cp.reduce.async.bulk(.tensor)`, `sured`,
+`multimem.ld_reduce`/`.red`/`.red.async`, `fabric.try_red`/
+`.try_pullred`; mildly `redux.sync` and `bar.red`. A read-modify-write
+with arithmetic is a load, a store, and an op; one `OpClass` per
+instruction (and one `MeasureKind` per `Measurement`) can express only
+one. Options: (1) a composite arm that makes `collect` emit two
+`Measurement`s sharing provenance; (2) a documented single-side policy
+(v1: `atom` = read+write bytes and no flops; `red` = write bytes).
+Recommendation: start with (2) — the bytes side is what a roofline
+needs — and move to (1) only if a precision audit ever needs atomic
+flops.
+
+**§B — work not owned by the issuing thread.** `Scope` has
+`PerThread` and `PerWarp`; the ISA also has per-warpgroup
+(`wgmma.*`, 4 warps), single-thread-issues-CTA-scale
+(`cp.async.bulk*`, `st.bulk`, `tcgen05.cp`), per-CTA-pair
+(`tcgen05.mma` with `cta_group::2`), and writes-to-a-*remote*-CTA
+(`st.async.shared::cluster`, `mapa`-derived accesses). Multiplying a
+per-thread count by threads-per-CTA overcounts a TMA copy by two to
+three orders of magnitude — so **growing the scope axis is the
+structural prerequisite for every Tier 2 family**, and the reason
+those arms should not be added piecemeal ahead of it.
+
+**§C — bytes that are not in the instruction text.**
+`cp.async.bulk.tensor` (+`.reduce`/`.prefetch` tensor forms): the byte
+count lives in a host-side tensor-map descriptor — *permanently*
+unknowable from PTX; `UnquantifiedBytes` is the correct end state
+unless a `--bind`-style flag supplies the map. Register-sized
+`cp.async.bulk`/`st.bulk`: classic `UnquantifiedBytes`. `tex`/`tld4`/
+`suld`/`sust`: coordinate- and descriptor-dependent footprints.
+Related asymmetries where bytes-in ≠ bytes-out of a single
+instruction: `cp.async` with `src-size < cp-size` (zero-fill) and
+`tcgen05.cp` with decompression — pick one side per space and
+document.
+
+**§D — counting conventions with no single right answer.**
+The SFU family (`div`, `rcp`, `sqrt`, `rsqrt`, `sin`, `cos`, `lg2`,
+`ex2`, `tanh`): 1 flop per invocation? the SASS multi-instruction
+expansion? NCU counts these in a separate pipe entirely. Sparse MMA
+(`mma.sp`, `wgmma.mma_async.sp`, `tcgen05.mma.sp`): dense 2·M·N·K vs
+effective half. Block-scaled MMA kinds (`mxf4`, `mxf8f6f4`, …):
+scale-factor arithmetic on top of 2·M·N·K. Integer dot products and
+integer MMA (`dp4a`, `dp2a`, `mma` with s8/u8/b1, `redux.sync`): real
+arithmetic with no home in an FP-flops roofline — needs an
+integer-ops axis if that audience ever materializes. Already-shipped
+precedent: `min`/`max`/`abs`/`neg` = 1 flop (Williams) even though
+the planned NCU cross-check formula won't see them. None of these
+have a wrong answer; all of them have an *undocumented* answer as the
+only failure mode. The existing pattern — a documented policy plus
+the `pipe` axis planned with the SFU item — covers all of them.
+
+**§E — the cost is somewhere else.** `call`: the callee's flops and
+bytes are not attributed to the call site (recommend a report-level
+named unknown for calls to bodies the module doesn't contain).
+`wgmma.mma_async`/`tcgen05.mma` descriptor-sourced operands: matrix
+data streams from shared/tensor memory with **no load instructions to
+count** — instruction-level accounting is structurally blind to it;
+the MMA arms must decide whether to emit implicit operand-traffic
+bytes. `prefetch`/`applypriority`/`discard`/`griddepcontrol`/
+`nanosleep`: affect *when/where*, never *how much* — `Ignore` is
+correct and these fit fine; listed only because the reasoning differs
+from "does nothing".
+
+**§F — a different machine model entirely.** `multimem.*` (one
+operation touches every GPU in a multicast team), `fabric.*`
+(NVLink-fabric transfers to other GPUs' memory), texture filtering
+(fixed-function interpolation arithmetic that is neither flops nor
+bytes). These aren't missing arms — the roofline the tool computes
+has no axis for them, which is why they are Tier 4 / anti-scope, and
+why `Unknown` (loud) beats `Ignore` (silent) if one ever appears in
+a fixture.
+
+## Summary of warts (things to actually fix)
+
+The audit found no wrong numbers — nothing is counted with incorrect
+flops or bytes. In descending order of importance:
+
+1. **`Unparsed` statements are invisible at analyze time.** The
+   classifier's "counted and named, never dropped" contract has no
+   parser-side counterpart in the report: `collect.rs`/`build.rs`
+   skip non-`Instr` statements, so PTX syntax the parser doesn't know
+   (verified: the `d|p` operand of `setp`/`match.all.sync`/
+   `elect.sync`) contributes nothing and is named nowhere in the
+   output. The CI parse-allowlist protects only the committed corpus.
+   Recommend an unparsed-statement counter in the report — the exact
+   analogue of the unknown-ops counter. The one contract gap found.
+2. **Collateral `Unknown`s from coarse arms**: integer `div` (caught
+   by the SFU reservation); `addc`/`subc`/`madc` (miss the arm their
+   `.cc` partners hit). One line each.
+3. **Missing one-line arms for mnemonics real producers emit**:
+   `elect.sync` (also needs the `d|p` parser form), `shf`,
+   `setmaxnreg` — all three arrive with any Hopper corpus — plus the
+   harmless tail (`cnot`, `fns`, `clmad`, `createpolicy`,
+   `nanosleep`, `pmevent`, `mapa`, `getctarank`, `istypep`, stack
+   ops).
+4. **One dead arm**: `ldg`.
+
+None justify preemptive fixing under the demand-driven rule — but
+when a Phase 2 family PR touches `classify.rs`, sweeping the
+one-liners in the same change is nearly free.
+
+## Priority tiers for unhandled instructions
+
+Priority of *inclusion as classification arms*, not a schedule — the
+backlog stays demand-driven, and each tier names its trigger. Ranking
+criteria: (a) does it do flops or move bytes (misclassification would
+corrupt AI, not just clutter the unknown list); (b) does the target
+audience — GEMM / conv / stencil / attention from nvcc, clang,
+Triton — actually emit it; (c) how soon.
+
+### Tier 1 — blocks the core audience today (the existing Phase 2 instruction-families item)
+
+Any tensor-core or reduction kernel on sm_80/sm_89 — including
+everything Triton emits for these targets — hits these. All carry
+flops or bytes, so they dominate the ranked-unknown histogram the
+moment such a kernel is analyzed. Fixtures (k11, k12, k14) and
+verified grammars already live in the backlog item.
+
+- `mma` (dense) — flops = 2·M·N·K per warp; the single highest-value gap
+- `wmma.load` / `wmma.store` / `wmma.mma` — with the role split and the v1 phantom-FLOP regression test
+- `ldmatrix`, `stmatrix` — per-warp shared-memory fragment traffic
+- `cp.async` — bytes from the explicit size operand; plus `cp.async.commit_group` / `wait_group` / `wait_all` and `cp.async.mbarrier.arrive` as `Sync`
+- `atom`, `red` — v1 byte policy (read+write / write-only), documented (misfit §A)
+- SFU family with a documented flop policy (misfit §D): `div`, `rcp`, `sqrt`, `rsqrt`, `sin`, `cos`, `lg2`, `ex2`, `tanh` — softmax/normalization paths in attention kernels
+
+### Tier 2 — the Hopper/Blackwell data path (trigger: first sm_90+ kernel in the corpus)
+
+Same roofline materiality, gated on newer targets — **and on the
+scope-axis extension (misfit §B), which should land once, first, not
+per-family**. Blackwell entries additionally wait on sm_100 machine
+tables (`data/machine/` stops at sm_90).
+
+- `wgmma.mma_async` (+ `.sp`), with `wgmma.fence` / `commit_group` / `wait_group` as `Sync`
+- TMA: `cp.async.bulk`, `cp.async.bulk.tensor`, `cp.reduce.async.bulk` (+ `.tensor`), `cp.async.bulk.prefetch` (+ `.tensor`), with `cp.async.bulk.commit_group` / `wait_group` as `Sync`; tensor variants land as honest unquantified bytes (misfit §C)
+- Hopper warp-specialization boilerplate: `elect.sync` (`Sync`, plus the `d|p` operand form in the parser), `setmaxnreg` (`Ignore`)
+- `red.async`, `movmatrix`, `mma.sp` (sparse policy, misfit §D), `st.async` remote-attribution review
+- `tcgen05.*` (all 14 entries) — tensor memory as a new `Space`, single-thread-issue scope, with sm_100 machine tables
+
+### Tier 3 — cheap correctness sweep (trigger: any PR touching classify.rs, or the first corpus sighting)
+
+One-line arms where the only cost of absence is unknown-list noise.
+Bundle opportunistically; none justifies its own PR.
+
+- To `Integer`: integer `div`, `addc`, `subc`, `madc`, `shf` (likeliest to appear first — nvcc funnel shifts), `cnot`, `fns`, `clmad`, `getctarank`
+- To `Predicate`: `istypep`
+- To `Move`: `mapa`, `stacksave`, `stackrestore`, `alloca`
+- To `Ignore`: `createpolicy`, `nanosleep`, `pmevent`, `tensormap.replace` (or a small fixed `Memory` write — decide when TMA lands)
+- To `Sync`: `tensormap.cp_fenceproxy`, `clusterlaunchcontrol.try_cancel` / `.query_cancel`
+- Housekeeping: delete the dead `ldg` arm
+
+### Tier 4 — out of audience (trigger: an explicit audience change, i.e. an edit to README's anti-scope)
+
+Families whose absence is a scope statement, not a gap. They stay
+`Unknown` deliberately: several move real bytes (`tex`, `suld`,
+`sust`, `multimem`, `fabric`), so `Ignore` would be wrong, and a real
+arm would demand modeling the tool has declared anti-scope (misfit
+§F). `Unknown` keeps them loud if one ever appears.
+
+- Texture / surface: `tex`, `tld4`, `txq`, `suld`, `sust`, `sured`, `suq`
+- Multi-GPU: `multimem.ld_reduce` / `.st` / `.red` / `.st.async` / `.red.async` / `.cp.async.bulk` / `.cp.reduce.async.bulk`, `fabric.try_get` / `.try_put` / `.try_red` / `.try_pullred` / `.submit` / `.wait`
+- Legacy video: `vadd` / `vsub` / `vabsdiff` / `vmin` / `vmax` / `vshl` / `vshr` / `vmad` / `vset` and the SIMD `*2` / `*4` variants
