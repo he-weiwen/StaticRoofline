@@ -77,7 +77,8 @@ pub struct KernelReport {
     /// Launch configuration, when known (flag or PTX directive).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub launch: Option<LaunchInfo>,
-    /// Kernel totals scaled to one CTA (needs `launch`).
+    /// Kernel totals scaled to one CTA (needs `launch`; upper bounds
+    /// when the block size is only a maximum).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub totals_per_cta: Option<Aggregates>,
     /// Loops ranked by symbolic weight, heaviest first.
@@ -152,6 +153,9 @@ pub struct LaunchInfo {
     pub threads: u64,
     /// "flag", ".reqntid", or ".maxntid".
     pub source: String,
+    /// `.maxntid` is a maximum, not the launch: `false` there, and
+    /// every per-CTA total is then an upper bound.
+    pub exact: bool,
 }
 
 #[derive(Debug, Serialize)]

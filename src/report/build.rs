@@ -385,9 +385,9 @@ impl<'a> KernelBuilder<'a> {
 
     /// Aggregate over blocks; `below` = aggregate within this loop
     /// (multipliers stop there), `None` = whole kernel. With
-    /// `cta_threads`, every per-thread count additionally scales by
-    /// the CTA's thread count.
-    fn aggregates(&self, below: Option<LoopId>, cta_threads: Option<u64>) -> Aggregates {
+    /// `cta`, every per-thread count additionally scales by the CTA's
+    /// thread count, and is an upper bound when that count is one.
+    fn aggregates(&self, below: Option<LoopId>, cta: Option<&LaunchInfo>) -> Aggregates {
         let mut flops: BTreeMap<Pipe, FlopTable> =
             Pipe::ALL.iter().map(|&p| (p, FlopTable::new())).collect();
         let mut bytes: BTreeMap<&'static str, (TermSum, TermSum)> = BTreeMap::new();
@@ -415,9 +415,11 @@ impl<'a> KernelBuilder<'a> {
                 chain_at_most |= self.cond_entry[l.0 as usize];
             }
             for m in &bm.measurements {
-                let at_most =
-                    bm.qualifier == CountQualifier::AtMost || m.predicated || chain_at_most;
-                let n = m.count as i64 * cta_threads.map_or(1, |t| t as i64);
+                let at_most = bm.qualifier == CountQualifier::AtMost
+                    || m.predicated
+                    || chain_at_most
+                    || cta.is_some_and(|c| !c.exact);
+                let n = m.count as i64 * cta.map_or(1, |c| c.threads as i64);
                 match m.kind {
                     MeasureKind::Flops { pipe, precision } => {
                         flops
@@ -846,10 +848,9 @@ impl<'a> KernelBuilder<'a> {
                 block,
                 threads: block.iter().map(|&d| d as u64).product(),
                 source: source.to_owned(),
+                exact: source != ".maxntid",
             });
-        let totals_per_cta = launch
-            .as_ref()
-            .map(|l| self.aggregates(None, Some(l.threads)));
+        let totals_per_cta = launch.as_ref().map(|l| self.aggregates(None, Some(l)));
 
         let mut unknowns = self.unknowns();
         for arch in arch_unknowns {

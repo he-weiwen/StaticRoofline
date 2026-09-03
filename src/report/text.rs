@@ -15,6 +15,10 @@ pub fn render(report: &Report) -> String {
     let mut out = String::new();
     let w = &mut out;
     let _ = writeln!(w, "ptxroof analyze [static] — {}", report.input);
+    let _ = writeln!(
+        w,
+        "counts are static, per thread, as requested by the PTX: not measured, and not what the memory system moves"
+    );
     if !report.bindings.is_empty() {
         let binds: Vec<String> = report
             .bindings
@@ -60,10 +64,15 @@ pub fn render(report: &Report) -> String {
             );
         }
         if let Some(l) = &k.launch {
+            let (bound, note) = if l.exact {
+                ("", "")
+            } else {
+                ("<= ", " — a maximum, not the launch")
+            };
             let _ = writeln!(
                 w,
-                "  launch: {}x{}x{} = {} threads (from {})",
-                l.block[0], l.block[1], l.block[2], l.threads, l.source
+                "  block size: {bound}{} threads ({}x{}x{} from {}{note})",
+                l.threads, l.block[0], l.block[1], l.block[2], l.source
             );
         }
         let sm = &k.shared_memory;
