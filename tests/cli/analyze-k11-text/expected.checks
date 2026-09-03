@@ -1,5 +1,5 @@
 kernel void hgemm_wmma<128, 128, 16, 64, 64, 128>(
-verdict @ sm_80 (A100-SXM4-40GB, from target-directive): memory-bound — loop 11_wmma.cuh:85 AI(global) 64 flop/B vs f16 tensor knee 200.6
+knee @ sm_80 (A100-SXM4-40GB, from target-directive): f16 tensor 200.6 flop/B = 312 TFLOPS / 1555 GB/s; loop 11_wmma.cuh:85 AI(global) 64 flop/B
 shared memory [static]: 8192 B per CTA
 loop 11_wmma.cuh:85 ($L__BB0_2)
 trips = ceildiv(param_2, 16)

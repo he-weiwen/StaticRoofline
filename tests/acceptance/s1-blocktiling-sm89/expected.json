@@ -13,10 +13,11 @@
           }
         }
       ],
-      "verdicts": [
+      "knees": [
         {"arch": "sm_89", "machine": "GeForce RTX 4090",
          "source": "target-directive", "loop": "5_2d_blocktiling.cuh:39",
-         "ai_global": 32.0, "verdict": "memory-bound"}
+         "pipe": "cuda-core", "precision": "f32", "ai_global": 32.0,
+         "peak_tflops": 82.58, "dram_bw_gbps": 1008.0, "knee": 81.92460317460318}
       ]
     }
   ]

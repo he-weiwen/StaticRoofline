@@ -601,21 +601,21 @@ impl<'a> KernelBuilder<'a> {
             .collect()
     }
 
-    /// Roofline verdicts at the deepest hot-chain loop whose
+    /// Roofline knees at the deepest heaviest-chain loop whose
     /// per-iteration AI(global) is defined — the altitude where both
     /// the flops and the global traffic of the steady state are
     /// constants. Walks UP from the heaviest loop: an innermost loop
     /// that touches no global memory (k5's dot loop) defers to the
     /// tile loop above it.
-    fn verdicts(
+    fn knees(
         &self,
-        hot: Option<LoopId>,
+        heaviest: Option<LoopId>,
         arches: &[(String, crate::machine::Machine, &'static str)],
-    ) -> (Vec<Verdict>, Option<String>) {
-        let Some(hot) = hot else {
+    ) -> (Vec<Knee>, Option<String>) {
+        let Some(heaviest) = heaviest else {
             return (Vec::new(), None);
         };
-        let mut cur = Some(hot);
+        let mut cur = Some(heaviest);
         while let Some(l) = cur {
             let agg = self.aggregates(Some(l), None);
             if let Some(ai) = agg.ai_global {
@@ -631,14 +631,15 @@ impl<'a> KernelBuilder<'a> {
                     .flat_map(|(pipe, t)| t.iter().map(move |(k, v)| (*pipe, k, v)))
                     .filter(|(_, k, _)| k.as_str() != "total")
                     .filter_map(|(p, k, v)| v.expr.parse::<f64>().ok().map(|n| (p, k.clone(), n)))
+                    .filter(|(_, _, n)| *n > 0.0)
                     .max_by(|a, b| a.2.total_cmp(&b.2))
                     .map(|(p, k, _)| (p, k))
                     .unwrap_or((Pipe::CudaCore, "f32".to_owned()));
                 let mut out = Vec::new();
                 let mut missing = None;
                 for (arch, machine, source) in arches {
-                    match machine.knee_flop_per_byte(pipe, &precision) {
-                        Some(knee) => out.push(Verdict {
+                    match machine.peak_tflops(pipe, &precision) {
+                        Some(peak) => out.push(Knee {
                             arch: arch.clone(),
                             machine: machine.name.clone(),
                             source: (*source).to_owned(),
@@ -646,13 +647,9 @@ impl<'a> KernelBuilder<'a> {
                             pipe: pipe.key().to_owned(),
                             precision: precision.clone(),
                             ai_global: ai,
-                            knee,
-                            verdict: if ai >= knee {
-                                "compute-bound"
-                            } else {
-                                "memory-bound"
-                            }
-                            .to_owned(),
+                            peak_tflops: peak,
+                            dram_bw_gbps: machine.dram_bw_gbps,
+                            knee: peak * 1000.0 / machine.dram_bw_gbps,
                         }),
                         None => {
                             missing = Some(format!(
@@ -827,7 +824,7 @@ impl<'a> KernelBuilder<'a> {
             classes.unparsed += c.unparsed as u64;
         }
         let ranking = self.ranking();
-        let (verdicts, verdict_hole) = self.verdicts(ranking.first().map(|(id, _)| *id), arches);
+        let (knees, knee_hole) = self.knees(ranking.first().map(|(id, _)| *id), arches);
 
         // Launch config: explicit flag, else the PTX's own directives.
         let launch = launch_flag
@@ -848,13 +845,13 @@ impl<'a> KernelBuilder<'a> {
             unknowns.push(UnknownEntry {
                 what: format!("architecture {arch}"),
                 count: None,
-                reason: "no machine table — pass --arch with one of the known                          architectures for verdicts"
+                reason: "no machine table — pass --arch with one of the known                          architectures for a knee"
                     .to_owned(),
             });
         }
-        if let Some(reason) = verdict_hole {
+        if let Some(reason) = knee_hole {
             unknowns.push(UnknownEntry {
-                what: "verdict".to_owned(),
+                what: "knee".to_owned(),
                 count: None,
                 reason,
             });
@@ -876,8 +873,8 @@ impl<'a> KernelBuilder<'a> {
                 .collect(),
             shared_memory: self.shared_memory(),
             instruction_classes: classes,
-            hot_loop: ranking.first().map(|(_, r)| r.loop_name.clone()),
-            verdicts,
+            heaviest_loop: ranking.first().map(|(_, r)| r.loop_name.clone()),
+            knees,
             launch,
             totals_per_cta,
             ranking: ranking.into_iter().map(|(_, r)| r).collect(),

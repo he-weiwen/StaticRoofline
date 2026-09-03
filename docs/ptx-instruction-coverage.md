@@ -382,7 +382,7 @@ and CUTLASS emit these on H100).
 ## §9.7.17 TensorCore 5th Generation Family Instructions
 
 All `Unknown` today via the `tcgen05` mnemonic. Tier 2, additionally
-gated: `data/machine/` stops at sm_90, so there is no verdict table to
+gated: `data/machine/` stops at sm_90, so there is no knee table to
 compare Blackwell flops against yet — classify-then-compare should
 land together with sm_100 machine tables. Two family-wide misfits:
 **tensor memory** is a fifth memory space the `Space` enum doesn't

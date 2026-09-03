@@ -1,6 +1,6 @@
 # Text report essentials, in order.
 kernel micro_smoke
-hot loop: $L__BB0_2
+heaviest loop (static weight): $L__BB0_2
 trips = param_1
 AI(global) = 0.25 flop/B
 coverage: instructions_classified 100.0%

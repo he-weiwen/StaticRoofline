@@ -1,6 +1,8 @@
 # S1 (PLAN.md §4): is this kernel's design point what I computed on
-# paper? k5 at BM=64 BN=64 BK=8 TM=8 TN=8. Flips at PR 13 (verdicts).
-# AI(global) is shape-independent, so the verdict pair needs no --bind.
+# paper? k5 at BM=64 BN=64 BK=8 TM=8 TN=8. Flips at PR 13.
+# AI(global) is shape-independent, so the knee pair needs no --bind:
+# 32 flop/B sits above the A100 f32 knee (12.5) and below the RTX
+# 3090's (38.0) — the reader's comparison, printed with both numbers.
 args = ["analyze", "{fixtures}/k5/k5.sm_80.ptx", "--json",
         "--arch", "sm_80", "--arch", "sm_86"]
 json = true

@@ -5,7 +5,7 @@
       "name": "_Z15hgemm_coalescediiifPK6__halfS1_fPS_",
       "demangled": "hgemm_coalesced(int, int, int, float, __half const*, __half const*, float, __half*)",
       "instruction_classes": {"total": 101, "flop": 7, "memory": 20, "unknown": 0},
-      "hot_loop": "2_coalesced.cuh:14",
+      "heaviest_loop": "2_coalesced.cuh:14",
       "ranking": [
         {"loop": "2_coalesced.cuh:14", "weight": "31 * ((param_2 - param_2 mod 4) / 4)"},
         {"loop": "2_coalesced.cuh:14 (remainder)", "weight": "12 * (param_2 mod 4)"}

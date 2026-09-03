@@ -64,12 +64,16 @@ pub struct KernelReport {
     /// (`flop + non_flop_arith + memory + sync + communication +
     /// control + ignore + unknown == total`) runs on these.
     pub instruction_classes: InstructionClasses,
-    pub hot_loop: Option<String>,
-    /// Roofline verdicts, one per requested (or defaulted)
-    /// architecture, computed at the deepest hot-chain loop whose
-    /// per-iteration AI(global) is defined.
+    /// The loop with the largest static weight (instructions × trips).
+    pub heaviest_loop: Option<String>,
+    /// Roofline knees, one per requested (or defaulted) architecture,
+    /// for the dominant flop bucket of the deepest heaviest-chain loop
+    /// whose per-iteration AI(global) is defined. A reference number
+    /// next to that loop's requested AI — not a verdict: requested
+    /// bytes are neither DRAM traffic (overfetch) nor a lower bound on
+    /// it (cache reuse).
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub verdicts: Vec<Verdict>,
+    pub knees: Vec<Knee>,
     /// Launch configuration, when known (flag or PTX directive).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub launch: Option<LaunchInfo>,
@@ -113,13 +117,13 @@ pub struct InstructionClasses {
 }
 
 #[derive(Debug, Serialize)]
-pub struct Verdict {
+pub struct Knee {
     pub arch: String,
     /// The concrete part the machine table describes.
     pub machine: String,
     /// Where the table came from: "flag" or "target-directive".
     pub source: String,
-    /// The loop the verdict is about.
+    /// The loop whose AI the knee is printed next to.
     #[serde(rename = "loop")]
     pub loop_name: String,
     /// Dominant flop bucket of that loop — pipe ("cuda-core",
@@ -127,8 +131,11 @@ pub struct Verdict {
     pub pipe: String,
     pub precision: String,
     pub ai_global: f64,
+    /// `knee = peak_tflops * 1000 / dram_bw_gbps`, both cited in the
+    /// machine table.
+    pub peak_tflops: f64,
+    pub dram_bw_gbps: f64,
     pub knee: f64,
-    pub verdict: String,
 }
 
 #[derive(Debug, Serialize)]

@@ -36,26 +36,27 @@ pub fn render(report: &Report) -> String {
             .map(|p| format!("{}:{}", p.index, p.ty))
             .collect();
         let _ = writeln!(w, "  params: {}", params.join(" "));
-        if let Some(hot) = &k.hot_loop {
-            let _ = writeln!(w, "  hot loop: {hot}");
+        if let Some(heaviest) = &k.heaviest_loop {
+            let _ = writeln!(w, "  heaviest loop (static weight): {heaviest}");
         }
-        for v in &k.verdicts {
-            let unit = if v.pipe == "cuda-core" {
+        for kn in &k.knees {
+            let unit = if kn.pipe == "cuda-core" {
                 String::new()
             } else {
-                format!(" {}", v.pipe)
+                format!(" {}", kn.pipe)
             };
             let _ = writeln!(
                 w,
-                "  verdict @ {} ({}, from {}): {} — loop {} AI(global) {} flop/B vs {}{unit} knee {:.1}",
-                v.arch,
-                v.machine,
-                v.source,
-                v.verdict,
-                v.loop_name,
-                v.ai_global,
-                v.precision,
-                v.knee
+                "  knee @ {} ({}, from {}): {}{unit} {:.1} flop/B = {} TFLOPS / {} GB/s; loop {} AI(global) {} flop/B",
+                kn.arch,
+                kn.machine,
+                kn.source,
+                kn.precision,
+                kn.knee,
+                kn.peak_tflops,
+                kn.dram_bw_gbps,
+                kn.loop_name,
+                kn.ai_global
             );
         }
         if let Some(l) = &k.launch {
@@ -79,7 +80,7 @@ pub fn render(report: &Report) -> String {
             );
         }
         if k.ranking.len() > 1 {
-            let _ = writeln!(w, "  loops by weight:");
+            let _ = writeln!(w, "  loops by static weight:");
             for (i, r) in k.ranking.iter().enumerate() {
                 let _ = writeln!(
                     w,

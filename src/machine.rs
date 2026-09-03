@@ -55,16 +55,20 @@ pub fn arch_table(arch: &str) -> Option<Machine> {
 }
 
 impl Machine {
+    /// Peak TFLOPS for one pipe and precision; `None` when the table
+    /// has no such peak — the SFU has none anywhere.
+    pub fn peak_tflops(&self, pipe: Pipe, precision: &str) -> Option<f64> {
+        match pipe {
+            Pipe::CudaCore => self.peak_tflops.get(precision).copied(),
+            Pipe::Tensor => self.tensor_peak_tflops.get(precision).copied(),
+            Pipe::Sfu => None,
+        }
+    }
+
     /// Roofline knee in flop/B for one pipe and precision: TFLOPS·1000
-    /// / GB/s (10^12 flop/s over 10^9 B/s). `None` when the table has
-    /// no such peak — the SFU has none anywhere.
+    /// / GB/s (10^12 flop/s over 10^9 B/s).
     pub fn knee_flop_per_byte(&self, pipe: Pipe, precision: &str) -> Option<f64> {
-        let peak = match pipe {
-            Pipe::CudaCore => self.peak_tflops.get(precision)?,
-            Pipe::Tensor => self.tensor_peak_tflops.get(precision)?,
-            Pipe::Sfu => return None,
-        };
-        Some(peak * 1000.0 / self.dram_bw_gbps)
+        Some(self.peak_tflops(pipe, precision)? * 1000.0 / self.dram_bw_gbps)
     }
 }
 
