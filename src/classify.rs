@@ -241,6 +241,8 @@ pub fn classify(module: &Module, instr: &Instr) -> OpClass {
         // -- tensor cores (warp-collective; counts are per lane) ----------
         "wmma" => wmma(&mods),
         "mma" => mma(&mods),
+        "ldmatrix" => matrix_fragments(&mods, Direction::Load),
+        "stmatrix" => matrix_fragments(&mods, Direction::Store),
 
         // -- sync / warp collectives ---------------------------------------
         "bar" | "barrier" | "mbarrier" | "membar" | "fence" => OpClass::Sync,
@@ -274,14 +276,21 @@ fn matrix_shape(modifier: &str) -> Option<(u32, u32, u32)> {
     Some((m.parse().ok()?, n.parse().ok()?, k.parse().ok()?))
 }
 
+/// `m8n8` → (8, 8).
+fn matrix_rows_cols(modifier: &str) -> Option<(u32, u32)> {
+    let (rows, cols) = modifier.strip_prefix('m')?.split_once('n')?;
+    Some((rows.parse().ok()?, cols.parse().ok()?))
+}
+
 /// Bits per matrix element for the tensor-core element types
-/// (PTX ISA §9.7.15.2, Matrix Data-types).
+/// (PTX ISA §9.7.15.2, Matrix Data-types) and the `ldmatrix` /
+/// `stmatrix` fragment types.
 fn element_bits(ty: &str) -> Option<u32> {
     Some(match ty {
         "b1" => 1,
         "s4" | "u4" => 4,
-        "s8" | "u8" => 8,
-        "f16" | "bf16" => 16,
+        "s8" | "u8" | "b8" => 8,
+        "f16" | "bf16" | "b16" => 16,
         "tf32" | "f32" | "s32" => 32,
         "f64" => 64,
         _ => return None,
@@ -394,6 +403,30 @@ fn mma(mods: &[&str]) -> OpClass {
         pipe: Pipe::Tensor,
         precision,
         flops: operations * 2 * m * n * k / WARP_LANES,
+    }
+}
+
+/// `ldmatrix` / `stmatrix` (PTX ISA §9.7.15.5.15–16): `.num` matrices
+/// of the shape modifier, always in shared memory ("If no state space
+/// is provided, generic addressing is used, such that the address in p
+/// points into .shared space"). The padded 6-/4-bit source formats
+/// have no element width here and stay unquantified.
+fn matrix_fragments(mods: &[&str], direction: Direction) -> OpClass {
+    let shape = mods.iter().find_map(|m| matrix_rows_cols(m));
+    let count = mods.iter().find_map(|m| match *m {
+        "x1" => Some(1),
+        "x2" => Some(2),
+        "x4" => Some(4),
+        _ => None,
+    });
+    let (Some((rows, cols)), Some(count)) = (shape, count) else {
+        return OpClass::Unknown;
+    };
+    let bits = mods.iter().rev().find_map(|m| element_bits(m));
+    OpClass::Memory {
+        space: Space::Shared,
+        direction,
+        bytes: bits.and_then(|b| per_lane_bytes(count * rows * cols * b)),
     }
 }
 
@@ -823,6 +856,37 @@ mod tests {
         ] {
             assert_eq!(class_of(text), OpClass::Unknown, "{text}");
         }
+    }
+
+    #[test]
+    fn ldmatrix_and_stmatrix_move_num_fragments_of_shared_memory() {
+        let shared = |direction, bytes| OpClass::Memory {
+            space: Space::Shared,
+            direction,
+            bytes,
+        };
+        // k14's forms: an 8x8 b16 matrix is 128 B per warp, 4 B per lane.
+        assert_eq!(
+            class_of("ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%r1, %r2, %r3, %r4}, [%r5];"),
+            shared(Direction::Load, Some(16))
+        );
+        assert_eq!(
+            class_of("ldmatrix.sync.aligned.m8n8.x2.trans.shared.b16 {%r1, %r2}, [%r3];"),
+            shared(Direction::Load, Some(8))
+        );
+        assert_eq!(
+            class_of("ldmatrix.sync.aligned.m16n16.x1.trans.shared.b8 {%r1, %r2}, [%r3];"),
+            shared(Direction::Load, Some(8))
+        );
+        assert_eq!(
+            class_of("stmatrix.sync.aligned.m8n8.x1.shared.b16 [%r1], {%r2};"),
+            shared(Direction::Store, Some(4))
+        );
+        // Padded 6-bit source data: width is not an element width.
+        assert_eq!(
+            class_of("ldmatrix.sync.aligned.m8n16.x1.shared.b8x16.b6x16_p32 {%r1}, [%r2];"),
+            shared(Direction::Load, None)
+        );
     }
 
     #[test]
