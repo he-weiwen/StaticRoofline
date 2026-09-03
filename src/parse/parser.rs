@@ -659,6 +659,21 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_operand(&mut self) -> Option<OperandId> {
+        let first = self.parse_single_operand()?;
+        if !self.at(TokenKind::Pipe) {
+            return Some(first);
+        }
+        let mut children = vec![first];
+        while self.eat(TokenKind::Pipe) {
+            children.push(self.parse_single_operand()?);
+        }
+        let start = self.operand_lists.len() as u32;
+        self.operand_lists.extend(children);
+        let span = IdxRange::new(start, self.operand_lists.len() as u32 - start);
+        Some(self.push_operand(Operand::MultipleDestinations { children: span }))
+    }
+
+    fn parse_single_operand(&mut self) -> Option<OperandId> {
         match self.peek().kind {
             TokenKind::Register => {
                 let t = self.bump();
@@ -718,7 +733,7 @@ impl<'a> Parser<'a> {
                 let mut children = Vec::new();
                 if !self.at(TokenKind::RBrace) {
                     loop {
-                        children.push(self.parse_operand()?);
+                        children.push(self.parse_single_operand()?);
                         if !self.eat(TokenKind::Comma) {
                             break;
                         }
@@ -847,6 +862,24 @@ mod tests {
         assert_eq!(mem(is[1]).1, 0);
         assert!(matches!(mem(is[2]).0, Operand::SymbolRef(_)));
         assert_eq!(mem(is[3]).1, -4);
+    }
+
+    #[test]
+    fn multiple_destination_registers() {
+        let m = parse_body(
+            "setp.lt.s32 %p1|%p2, %r1, %r2;\nelect.sync %r3|%p3, %r4;\nlop3.or.b32 _|%p4, %r1, %r2, %r3, 0x3f, %p1;",
+        );
+        assert_eq!(unparsed_count(&m), 0);
+        let is = instrs(&m);
+        assert_eq!(is.len(), 3);
+        for i in &is {
+            let dst = m.operand_ids(i.operands)[0];
+            let Operand::MultipleDestinations { children } = m.operand(dst) else {
+                panic!("first operand is not a p|q pair: {:?}", m.operand(dst));
+            };
+            assert_eq!(m.operand_ids(*children).len(), 2);
+        }
+        assert_eq!(m.operand_ids(is[2].operands).len(), 6);
     }
 
     #[test]

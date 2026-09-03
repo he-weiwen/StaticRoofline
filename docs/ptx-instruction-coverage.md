@@ -9,7 +9,8 @@ hierarchy, one row per instruction (sections that define several
 instructions get one row each).
 
 Pinned to: **PTX ISA 9.3** (the docs page as fetched 2026-07-16) and
-`classify.rs` at commit `d58b305` (branch `prototype-arena-refactor`).
+`classify.rs` as of the last commit that touched this file
+(`git log -1 -- docs/ptx-instruction-coverage.md`).
 
 **This document is a point-in-time audit, not a living inventory.**
 PLAN.md's self-auditing item (Phase 2) is explicit that the only
@@ -34,9 +35,9 @@ policed by CI (`tests/parse-allowlist.txt`, empty today), but at
 `analyze` time the report pipeline skips `Unparsed` statements with no
 counter (`collect.rs`/`build.rs` both skip non-`Instr` statements) —
 this is the one hole in the "never dropped" guarantee; see the warts
-section. Verified instance: the ISA's optional dual-destination
-operand `d|p` (as in `setp ... p|q`, `match.all.sync d|p`,
-`elect.sync d|p`) does not parse.
+section. (The ISA's `|`-separated destination operands — `setp ...
+p|q`, `match.all.sync d|p`, `elect.sync d|p` — were the verified
+instance until the parser learned them.)
 
 Past the parser, the model is deliberately simple. Each instruction
 maps to exactly **one** class:

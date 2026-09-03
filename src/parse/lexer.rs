@@ -67,6 +67,8 @@ pub enum TokenKind {
     At,
     /// `!` — negated predicate.
     Bang,
+    /// `|` between destination registers (`setp ... p|q`).
+    Pipe,
     EndOfFile,
     /// Unexpected byte; the lexer skips it and continues.
     Error,
@@ -165,6 +167,7 @@ impl<'a> Lexer<'a> {
             b'+' => punct(TokenKind::Plus),
             b'@' => punct(TokenKind::At),
             b'!' => punct(TokenKind::Bang),
+            b'|' => punct(TokenKind::Pipe),
             _ => None,
         };
         if let Some(kind) = single {

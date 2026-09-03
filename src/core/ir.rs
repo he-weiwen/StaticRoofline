@@ -47,6 +47,9 @@ pub enum Operand {
     /// `{a, b, ...}` — vector / fragment list; children are a span into
     /// [`Module::operand_lists`].
     VectorList { children: IdxRange<OperandId> },
+    /// `p|q` — an instruction writing several destination registers
+    /// (PTX ISA §9.7, "Instructions": `setp.lt.s32 p|q, a, b`).
+    MultipleDestinations { children: IdxRange<OperandId> },
 }
 
 /// One executable instruction.

@@ -155,6 +155,14 @@ fn dump_operand(m: &Module, id: OperandId) -> String {
                 .collect();
             format!("{{{}}}", inner.join(", "))
         }
+        Operand::MultipleDestinations { children } => {
+            let inner: Vec<String> = m
+                .operand_ids(*children)
+                .iter()
+                .map(|&id| dump_operand(m, id))
+                .collect();
+            inner.join("|")
+        }
     }
 }
 
@@ -169,6 +177,7 @@ mod tests {
                    .visible .entry k(\n.param .u64 k_param_0\n)\n{\n\
                    .reg .pred %p<2>;\n.loc 1 5 9\n\
                    ld.global.v2.f32 {%f1, %f2}, [%rd1+-8];\n\
+                   setp.lt.s32 %p1|%p2, %r1, %r2;\n\
                    @!%p1 bra $L__X;\n$L__X:\nret;\n}\n.file 1 \"a.cu\"\n";
         let d1 = dump(&parse(src).expect("src parses"));
         let d2 = dump(&parse(&d1).expect("dump reparses"));
