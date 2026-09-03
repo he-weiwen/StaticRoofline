@@ -349,15 +349,14 @@ transfers are a different roofline with different machine tables
 ## §9.7.15 Warp Level Matrix Multiply-Accumulate Instructions
 
 §9.7.15.1–.3 (shapes, data types, block scaling) are context sections.
-Everything below is `Unknown` today via the `wmma`/`mma`/`ldmatrix`/
-`stmatrix`/`movmatrix` mnemonics — the named Phase 2 tensor item,
-**Tier 1**. All entries are warp-collective: their per-thread count
-is the warp total over 32.
+All entries are warp-collective: their per-thread count is the warp
+total over 32 (`WARP_LANES` in `classify.rs`), which divides exactly
+for every shape × element type the ISA lists.
 
 | § | Instruction | Today | Verdict & recommendation |
 |---|---|---|---|
-| 9.7.15.4.3 | `wmma.load` | `Unknown` | OK (deferred, Tier 1) — target `Memory` **PerWarp** (fragment load), 0 flops. The Phase 2 item pins v1's worst bug as a regression test: v1 matched bare `wmma` and gave `wmma.load` an MMA shape — 8192 phantom FLOPs per load. Role must split on the first modifier. |
-| 9.7.15.4.4 | `wmma.store` | `Unknown` | OK (deferred, Tier 1) — target `Memory`, store side, warp total / 32. |
+| 9.7.15.4.3 | `wmma.load` | `Memory { space, Load, bytes }` — matrix `.a` = M×K, `.b` = K×N, `.c` = M×N elements × element bits / 8 / 32; space from the `.global`/`.shared` modifier, `Generic` without one | OK — role split on the first modifier (`wmma` arm). v1's worst bug — bare `wmma` matched as an MMA, 8192 phantom flops per load — is pinned by the `wmma_loads_and_stores_are_fragment_bytes` unit test: a load is `Memory`, never `Flop`. |
+| 9.7.15.4.4 | `wmma.store` | `Memory { space, Store, bytes }`, `.d` = M×N elements | OK. |
 | 9.7.15.4.5 | `wmma.mma` | `Unknown` | OK (deferred, Tier 1) — target `Flop`, 2·M·N·K per warp over 32 lanes. |
 | 9.7.15.5.14 | `mma` | `Unknown` (verified) | OK (deferred, **Tier 1 — the single most important missing instruction**) — every tensor-core GEMM on sm_80/sm_89 emits `mma.sync`; target `Flop`, 2·M·N·K per warp over 32 lanes, precision from the D/A type modifiers (shape grammar verified in the backlog item). ⚠ misfit §D for two sub-cases: integer `mma` (s8/u8/b1 — int-ops, not flops) and block-scaled kinds (scale-factor arithmetic beyond 2·M·N·K); pick and document conventions when the arm lands. |
 | 9.7.15.5.15 | `ldmatrix` | `Unknown` | OK (deferred, Tier 1) — target `Memory{Shared, Load}`, warp total / 32; bytes = x1/x2/x4 × fragment size (grammar verified in k14). |

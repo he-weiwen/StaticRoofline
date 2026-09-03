@@ -238,6 +238,9 @@ pub fn classify(module: &Module, instr: &Instr) -> OpClass {
             bytes: bytes_of(&mods),
         },
 
+        // -- tensor cores (warp-collective; counts are per lane) ----------
+        "wmma" => wmma(&mods),
+
         // -- sync / warp collectives ---------------------------------------
         "bar" | "barrier" | "mbarrier" | "membar" | "fence" => OpClass::Sync,
         "shfl" | "vote" | "match" | "activemask" | "redux" => OpClass::Sync,
@@ -254,6 +257,76 @@ pub fn classify(module: &Module, instr: &Instr) -> OpClass {
         // (tensor/wmma/mma/ldmatrix, cp.async, atom/red, SFU
         // transcendentals incl. div/sqrt/rcp/sin/cos/ex2/lg2/tanh/rsqrt,
         // tex/surf). Counted and named by the coverage check.
+        _ => OpClass::Unknown,
+    }
+}
+
+// PTX ISA §4.5.1: "The predefined integer constant WARP_SZ specifies
+// the number of threads per warp for the target platform; to date, all
+// target architectures have a WARP_SZ value of 32."
+const WARP_LANES: u32 = 32;
+
+/// `m16n8k16` → (16, 8, 16).
+fn matrix_shape(modifier: &str) -> Option<(u32, u32, u32)> {
+    let (m, rest) = modifier.strip_prefix('m')?.split_once('n')?;
+    let (n, k) = rest.split_once('k')?;
+    Some((m.parse().ok()?, n.parse().ok()?, k.parse().ok()?))
+}
+
+/// Bits per matrix element for the tensor-core element types
+/// (PTX ISA §9.7.15.2, Matrix Data-types).
+fn element_bits(ty: &str) -> Option<u32> {
+    Some(match ty {
+        "b1" => 1,
+        "s4" | "u4" => 4,
+        "s8" | "u8" => 8,
+        "f16" | "bf16" => 16,
+        "tf32" | "f32" | "s32" => 32,
+        "f64" => 64,
+        _ => return None,
+    })
+}
+
+/// One lane's share of a warp-wide byte count, exact or nothing.
+fn per_lane_bytes(bits: u32) -> Option<u32> {
+    bits.is_multiple_of(8 * WARP_LANES)
+        .then_some(bits / (8 * WARP_LANES))
+}
+
+/// `wmma.{load,store,mma}` (PTX ISA §9.7.15.4.3–5): the role is the
+/// first modifier; the shape modifier fixes every fragment's size and
+/// the flop count; the element types follow the shape.
+fn wmma(mods: &[&str]) -> OpClass {
+    let Some(shape_at) = mods.iter().position(|m| matrix_shape(m).is_some()) else {
+        return OpClass::Unknown;
+    };
+    let (m, n, k) = matrix_shape(mods[shape_at]).expect("position found a shape");
+    let types: Vec<&str> = mods[shape_at + 1..]
+        .iter()
+        .copied()
+        .filter(|t| element_bits(t).is_some())
+        .collect();
+    match (mods.first(), mods.get(1)) {
+        (Some(&role @ ("load" | "store")), Some(&matrix)) => {
+            let elements = match matrix {
+                "a" => m * k,
+                "b" => k * n,
+                "c" | "d" => m * n,
+                _ => return OpClass::Unknown,
+            };
+            let Some(bits) = types.last().and_then(|t| element_bits(t)) else {
+                return OpClass::Unknown;
+            };
+            OpClass::Memory {
+                space: space_of(mods),
+                direction: if role == "load" {
+                    Direction::Load
+                } else {
+                    Direction::Store
+                },
+                bytes: per_lane_bytes(elements * bits),
+            }
+        }
         _ => OpClass::Unknown,
     }
 }
@@ -550,6 +623,50 @@ mod tests {
         assert_eq!(class_of("@%p1 bra $L__X;"), OpClass::Control);
         assert_eq!(class_of("ret;"), OpClass::Control);
         assert_eq!(class_of("nop;"), OpClass::Ignore);
+    }
+
+    #[test]
+    fn wmma_loads_and_stores_are_fragment_bytes() {
+        // k11 (sm_80) forms. Per lane: an m16n16k16 f16 A fragment is
+        // 16*16*2 B / 32 = 16 B; the f32 accumulator 16*16*4 / 32 = 32 B.
+        let load = "wmma.load.a.sync.aligned.row.m16n16k16.shared.f16 {%r1, %r2, %r3, %r4, %r5, %r6, %r7, %r8}, [%r9], %r10;";
+        assert_eq!(
+            class_of(load),
+            OpClass::Memory {
+                space: Space::Shared,
+                direction: Direction::Load,
+                bytes: Some(16)
+            }
+        );
+        assert_eq!(
+            class_of(
+                "wmma.load.c.sync.aligned.row.m16n16k16.global.f32 {%f1, %f2, %f3, %f4, %f5, %f6, %f7, %f8}, [%rd1], %r1;"
+            ),
+            OpClass::Memory {
+                space: Space::Global,
+                direction: Direction::Load,
+                bytes: Some(32)
+            }
+        );
+        assert_eq!(
+            class_of(
+                "wmma.store.d.sync.aligned.row.m16n16k16.global.f16 [%rd1], {%r1, %r2, %r3, %r4}, %r5;"
+            ),
+            OpClass::Memory {
+                space: Space::Global,
+                direction: Direction::Store,
+                bytes: Some(16)
+            }
+        );
+        // m8n32k16: B is 16x32 bf16 = 1024 B per warp = 32 B per lane.
+        assert_eq!(
+            class_of("wmma.load.b.sync.aligned.col.m8n32k16.global.bf16 {%r1}, [%rd1];"),
+            OpClass::Memory {
+                space: Space::Global,
+                direction: Direction::Load,
+                bytes: Some(32)
+            }
+        );
     }
 
     #[test]
