@@ -8,20 +8,12 @@
 //! Only the report tree (PR 12) is ergonomic/owned; these indices never
 //! leak into user-facing output — the dumper resolves them.
 
+use super::arena::{IdxRange, IndexVec, newtype_idx};
 use super::intern::{Interner, Symbol};
 
-/// Index into [`Module::operands`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OperandId(pub u32);
-
-/// Span into one of the module-level pools: `(start, len)`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Span(pub u32, pub u32);
-
-impl Span {
-    pub fn range(self) -> std::ops::Range<usize> {
-        self.0 as usize..(self.0 + self.1) as usize
-    }
+newtype_idx! {
+    /// Handle into the [`Module::operands`] arena.
+    pub struct OperandId;
 }
 
 /// A source location from a `.loc` directive. For the extended form
@@ -54,7 +46,7 @@ pub enum Operand {
     Memory { base: OperandId, offset: i64 },
     /// `{a, b, ...}` — vector / fragment list; children are a span into
     /// [`Module::operand_lists`].
-    VectorList { children: Span },
+    VectorList { children: IdxRange<OperandId> },
 }
 
 /// One executable instruction.
@@ -62,9 +54,9 @@ pub enum Operand {
 pub struct Instr {
     pub mnemonic: Symbol,
     /// Span into [`Module::modifier_pool`].
-    pub modifiers: Span,
+    pub modifiers: IdxRange<Symbol>,
     /// Span into [`Module::operand_lists`].
-    pub operands: Span,
+    pub operands: IdxRange<OperandId>,
     pub predicate: Option<Predicate>,
     pub loc: Option<SourceLoc>,
     /// Byte offset of the mnemonic in the source — provenance for
@@ -142,7 +134,7 @@ pub struct Module {
     pub files: Vec<FileDirective>,
     pub kernels: Vec<Kernel>,
     /// Operand arena; `Operand::Memory::base` points here.
-    pub operands: Vec<Operand>,
+    pub operands: IndexVec<OperandId, Operand>,
     /// Pool of operand-id lists; `Instr::operands` and
     /// `Operand::VectorList::children` are spans into it.
     pub operand_lists: Vec<OperandId>,
@@ -152,10 +144,10 @@ pub struct Module {
 
 impl Module {
     pub fn operand(&self, id: OperandId) -> &Operand {
-        &self.operands[id.0 as usize]
+        &self.operands[id]
     }
 
-    pub fn operand_ids(&self, span: Span) -> &[OperandId] {
+    pub fn operand_ids(&self, span: IdxRange<OperandId>) -> &[OperandId] {
         &self.operand_lists[span.range()]
     }
 

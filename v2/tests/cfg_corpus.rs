@@ -62,12 +62,13 @@ fn every_edge_is_bidirectionally_consistent() {
         let src = fs::read_to_string(&path).expect("fixture readable");
         let m = parse(&src).expect("fixture parses");
         let cfg = build_cfg(&m, &m.kernels[0]);
-        for (i, b) in cfg.blocks.iter().enumerate() {
+        for (i, b) in cfg.blocks.iter_enumerated() {
             for s in &b.succs {
-                let back = &cfg.blocks[s.0 as usize].preds;
+                let back = &cfg.block(*s).preds;
                 assert!(
-                    back.iter().any(|p| p.0 as usize == i),
-                    "{fixture}: edge {i}->{} missing from preds",
+                    back.contains(&i),
+                    "{fixture}: edge {}->{} missing from preds",
+                    i.0,
                     s.0
                 );
             }

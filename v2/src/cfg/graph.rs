@@ -14,11 +14,13 @@
 //! for a conditional branch `succs[0]` is the taken target and
 //! `succs[1]` the fallthrough.
 
-use crate::core::{Instr, Kernel, Module, Operand, Stmt, Symbol};
+use crate::core::arena::newtype_idx;
+use crate::core::{IndexVec, Instr, Kernel, Module, Operand, Stmt, Symbol};
 
-/// Index into [`Cfg::blocks`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct BlockId(pub u32);
+newtype_idx! {
+    /// Index into [`Cfg::blocks`].
+    pub struct BlockId;
+}
 
 #[derive(Debug)]
 pub struct Block {
@@ -33,7 +35,7 @@ pub struct Block {
 
 #[derive(Debug)]
 pub struct Cfg {
-    pub blocks: Vec<Block>,
+    pub blocks: IndexVec<BlockId, Block>,
     /// Statement indices of `call` instructions — surfaced by the
     /// report as a visible unknown (non-inlined callee).
     pub call_sites: Vec<usize>,
@@ -50,7 +52,7 @@ impl Cfg {
     pub const ENTRY: BlockId = BlockId(0);
 
     pub fn block(&self, id: BlockId) -> &Block {
-        &self.blocks[id.0 as usize]
+        &self.blocks[id]
     }
 
     /// Instructions of a block, in order.
@@ -90,7 +92,7 @@ pub fn build_cfg(module: &Module, kernel: &Kernel) -> Cfg {
     }
 
     // -- blocks -------------------------------------------------------------
-    let mut blocks = Vec::new();
+    let mut blocks: IndexVec<BlockId, Block> = IndexVec::new();
     let mut call_sites = Vec::new();
     let mut start = 0usize;
     for (i, &is_leader) in leader.iter().enumerate().skip(1) {
@@ -120,17 +122,15 @@ pub fn build_cfg(module: &Module, kernel: &Kernel) -> Cfg {
     }
 
     let label_to_block: std::collections::HashMap<Symbol, BlockId> = blocks
-        .iter()
-        .enumerate()
-        .filter_map(|(i, b)| b.label.map(|l| (l, BlockId(i as u32))))
+        .iter_enumerated()
+        .filter_map(|(id, b)| b.label.map(|l| (l, id)))
         .collect();
 
     // -- edges --------------------------------------------------------------
     let mut unresolved = Vec::new();
     let mut edges: Vec<(BlockId, Vec<BlockId>)> = Vec::new();
-    for (bi, block) in blocks.iter().enumerate() {
-        let bid = BlockId(bi as u32);
-        let next = (bi + 1 < blocks.len()).then(|| BlockId(bi as u32 + 1));
+    for (bid, block) in blocks.iter_enumerated() {
+        let next = ((bid.0 as usize) + 1 < blocks.len()).then(|| BlockId(bid.0 + 1));
         let mut succs: Vec<BlockId> = Vec::new();
 
         // Record call sites while we're walking the statements.
@@ -173,7 +173,7 @@ pub fn build_cfg(module: &Module, kernel: &Kernel) -> Cfg {
                     .map(|&id| module.operand(id))
                     && let Some(&tbl_block) = label_to_block.get(tbl)
                 {
-                    let tb = &blocks[tbl_block.0 as usize];
+                    let tb = &blocks[tbl_block];
                     for stmt in &kernel.stmts[tb.start..tb.end] {
                         if let Stmt::BranchTargets(targets) = stmt {
                             for t in targets {
@@ -218,9 +218,9 @@ pub fn build_cfg(module: &Module, kernel: &Kernel) -> Cfg {
 
     for (bid, succs) in edges {
         for s in &succs {
-            blocks[s.0 as usize].preds.push(bid);
+            blocks[*s].preds.push(bid);
         }
-        blocks[bid.0 as usize].succs = succs;
+        blocks[bid].succs = succs;
     }
 
     Cfg {

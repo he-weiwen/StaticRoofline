@@ -18,8 +18,8 @@
 //! naming the line.
 
 use crate::core::{
-    FileDirective, Instr, Interner, Kernel, Module, Operand, OperandId, Param, Predicate, RegDecl,
-    SharedDecl, SourceLoc, Span, Stmt, Symbol,
+    FileDirective, IdxRange, IndexVec, Instr, Interner, Kernel, Module, Operand, OperandId, Param,
+    Predicate, RegDecl, SharedDecl, SourceLoc, Stmt, Symbol,
 };
 use crate::parse::lexer::{Token, TokenKind, tokenize};
 
@@ -44,7 +44,7 @@ struct Parser<'a> {
     address_size: u32,
     files: Vec<FileDirective>,
     kernels: Vec<Kernel>,
-    operands: Vec<Operand>,
+    operands: IndexVec<OperandId, Operand>,
     operand_lists: Vec<OperandId>,
     modifier_pool: Vec<Symbol>,
 }
@@ -61,7 +61,7 @@ impl<'a> Parser<'a> {
             address_size: 64,
             files: Vec::new(),
             kernels: Vec::new(),
-            operands: Vec::new(),
+            operands: IndexVec::new(),
             operand_lists: Vec::new(),
             modifier_pool: Vec::new(),
         }
@@ -168,6 +168,18 @@ impl<'a> Parser<'a> {
                 }
                 "visible" | "weak" | "extern" | "common" => {
                     // Linkage prefix; the next directive carries the meat.
+                }
+                "shared" => {
+                    // Module-scope shared variable. nvcc emits dynamic shared
+                    // memory as `.extern .shared .align A .b8 name[];` at module
+                    // scope (the `.extern` linkage prefix is consumed above).
+                    // These are declarations, not analysis content, and a
+                    // module-scope dynamic decl is 0 static bytes, so parse-and-
+                    // discard keeps the module parseable without affecting the
+                    // per-kernel static shared-per-CTA report.
+                    if self.parse_shared_decl().is_none() {
+                        self.resync_to_semicolon();
+                    }
                 }
                 "entry" => {
                     let kernel = self.parse_kernel()?;
@@ -609,7 +621,7 @@ impl<'a> Parser<'a> {
                 }
             }
         }
-        let modifiers = Span(mod_start, self.modifier_pool.len() as u32 - mod_start);
+        let modifiers = IdxRange::new(mod_start, self.modifier_pool.len() as u32 - mod_start);
 
         // Operand list (until ';').
         let mut ids = Vec::new();
@@ -630,7 +642,7 @@ impl<'a> Parser<'a> {
 
         let start = self.operand_lists.len() as u32;
         self.operand_lists.extend(ids);
-        let operands = Span(start, self.operand_lists.len() as u32 - start);
+        let operands = IdxRange::new(start, self.operand_lists.len() as u32 - start);
         Stmt::Instr(Instr {
             mnemonic,
             modifiers,
@@ -642,9 +654,7 @@ impl<'a> Parser<'a> {
     }
 
     fn push_operand(&mut self, op: Operand) -> OperandId {
-        let id = OperandId(self.operands.len() as u32);
-        self.operands.push(op);
-        id
+        self.operands.push(op)
     }
 
     fn parse_operand(&mut self) -> Option<OperandId> {
@@ -718,7 +728,7 @@ impl<'a> Parser<'a> {
                 }
                 let start = self.operand_lists.len() as u32;
                 self.operand_lists.extend(children);
-                let span = Span(start, self.operand_lists.len() as u32 - start);
+                let span = IdxRange::new(start, self.operand_lists.len() as u32 - start);
                 Some(self.push_operand(Operand::VectorList { children: span }))
             }
             _ => None,
@@ -844,7 +854,7 @@ mod tests {
         let i = instrs(&m)[0];
         let ops = m.operand_ids(i.operands);
         match m.operand(ops[0]) {
-            Operand::VectorList { children } => assert_eq!(children.1, 2),
+            Operand::VectorList { children } => assert_eq!(children.len(), 2),
             other => panic!("expected vector list, got {other:?}"),
         }
     }
@@ -892,6 +902,20 @@ mod tests {
         assert_eq!(k.shared_decls.len(), 2);
         assert_eq!(k.shared_decls[0].size, Some(1024));
         assert_eq!(k.shared_decls[1].size, None); // dynamic
+    }
+
+    #[test]
+    fn module_scope_shared_decl() {
+        // nvcc emits `extern __shared__` as a module-scope `.extern .shared`
+        // declaration ahead of the `.entry`. The module must still parse.
+        let m = parse(
+            ".version 8.7\n.target sm_80\n.address_size 64\n\
+             .extern .shared .align 16 .b8 smem[];\n\
+             .extern .shared .align 16 .b8 s[];\n\
+             .visible .entry k()\n{\nbar.sync 0;\nret;\n}\n",
+        )
+        .expect("module with top-level .extern .shared parses");
+        assert_eq!(m.kernels.len(), 1);
     }
 
     #[test]

@@ -774,6 +774,24 @@ conventions)
 - Done when: unit + S7.1/S7.2 + k5 text checks green; no occupancy
   claim enters the report.
 
+**PR 16 — Typed index arenas.** (~200 LOC; post-Phase-1 hardening of
+the §2 flat-IR ground rule, no behavior change)
+- Contents: `core/arena.rs` — `IndexVec<I, T>` and `IdxRange<I>`,
+  a hand-rolled subset of rustc's `rustc_index` (`Idx` trait,
+  `newtype_idx!`), honoring the no-dependencies rule. `OperandId` and
+  `BlockId` become `newtype_idx!` handles; `Module::operands` and
+  `Cfg::blocks` become `IndexVec`s; the untyped `Span` shared by the
+  operand-list and modifier pools splits into two `IdxRange` types, so
+  crossing the pools is a compile error instead of a silent read of the
+  wrong pool. The `.0` field stays public, so `Foo(0)` construction
+  still works.
+- Also: the parser accepts module-scope `.shared` declarations
+  (nvcc's `.extern .shared .align A .b8 name[];` for `extern
+  __shared__`), parse-and-discard — a module-scope dynamic decl is 0
+  static bytes, so the PR 15 per-CTA report is unaffected. Triggered
+  by a tensor-core demo kernel that failed to parse.
+- Done when: `ci.sh` green with no expected-output change.
+
 ### Phase 2 — the demand-driven backlog
 
 Nothing here is scheduled. An item starts only when its trigger fires;
@@ -986,6 +1004,7 @@ Phase 1:
 - [x] PR 13 — machine model + verdicts + README ★S1 — **Phase 1 done**
 - [x] PR 14 — sm_89 fixtures (k1/k5) ★S1.2 + NCU validation on the local RTX 4090
 - [x] PR 15 — static shared memory per CTA (★S7.1/S7.2 assertions + `ptxas -v` cross-check)
+- [x] PR 16 — typed index arenas (`IndexVec`/`IdxRange`) + module-scope `.shared` decls
 
 Phase 2 (backlog — tick when triggered and executed):
 - [ ] tensor/async/atomic/SFU families (+ k11/k12/k14 fixtures)
