@@ -277,6 +277,20 @@ pub fn classify(module: &Module, instr: &Instr) -> OpClass {
         // -- asynchronous copies -----------------------------------------------
         "cp" => cp(module, instr, &mods),
 
+        // -- atomics (PTX ISA §9.7.14.5–6): a read-modify-write of one
+        // location; the arithmetic is not counted as flops -------------
+        "atom" => OpClass::Copy {
+            from: space_of(&mods),
+            to: space_of(&mods),
+            read_bytes: bytes_of(&mods),
+            written_bytes: bytes_of(&mods),
+        },
+        "red" => OpClass::Memory {
+            space: space_of(&mods),
+            direction: Direction::Store,
+            bytes: bytes_of(&mods),
+        },
+
         // -- sync / warp collectives ---------------------------------------
         "bar" | "barrier" | "mbarrier" | "membar" | "fence" => OpClass::Sync,
         "shfl" | "vote" | "match" | "activemask" | "redux" => OpClass::Sync,
@@ -1044,12 +1058,46 @@ mod tests {
     }
 
     #[test]
-    fn phase_2_families_are_unknown_not_zero() {
-        for text in [
-            "atom.global.add.u32 %r1, [%rd1], %r2;",
-            "tex.2d.v4.f32.f32 {%f1, %f2, %f3, %f4}, [t, {%f5, %f6}];",
-        ] {
-            assert_eq!(class_of(text), OpClass::Unknown, "{text}");
-        }
+    fn atomics_are_bytes_both_ways_reductions_store_only() {
+        assert_eq!(
+            class_of("atom.global.add.u32 %r1, [%rd1], %r2;"),
+            OpClass::Copy {
+                from: Space::Global,
+                to: Space::Global,
+                read_bytes: Some(4),
+                written_bytes: Some(4)
+            }
+        );
+        assert_eq!(
+            class_of("atom.shared.cas.b64 %rd1, [%r1], %rd2, %rd3;"),
+            OpClass::Copy {
+                from: Space::Shared,
+                to: Space::Shared,
+                read_bytes: Some(8),
+                written_bytes: Some(8)
+            }
+        );
+        assert_eq!(
+            class_of("red.relaxed.gpu.global.add.v2.f32 [%rd1], {%f1, %f2};"),
+            OpClass::Memory {
+                space: Space::Global,
+                direction: Direction::Store,
+                bytes: Some(8)
+            }
+        );
+        assert_eq!(
+            class_of("red.add.f16x2 [%rd1], %r1;"),
+            OpClass::Memory {
+                space: Space::Generic,
+                direction: Direction::Store,
+                bytes: Some(4)
+            }
+        );
+    }
+
+    #[test]
+    fn out_of_audience_families_are_unknown_not_zero() {
+        let tex = "tex.2d.v4.f32.f32 {%f1, %f2, %f3, %f4}, [t, {%f5, %f6}];";
+        assert_eq!(class_of(tex), OpClass::Unknown);
     }
 }

@@ -321,8 +321,8 @@ transfers are a different roofline with different machine tables
 | 9.7.14.3 | `barrier.cluster` | `Sync` (via `barrier`) | OK. |
 | 9.7.14.4 | `membar` | `Sync` | OK. |
 | 9.7.14.4 | `fence` | `Sync` | OK — all variants (`fence.proxy.*`, `fence.mbarrier_init`, …) via modifier transparency. |
-| 9.7.14.5 | `atom` | `Unknown` (verified; deliberate) | OK (deferred, **Tier 1**) — ⚠⚠ misfit §A, the canonical case: `atom.global.add.f32` is a load, a store, *and* an FP add in one instruction; one `OpClass` cannot say so. Recommended landing policy: v1's documented convention (count read+write bytes, no flops), upgraded to two `Measurement`s per instruction only if a precision audit ever needs atomic flops. Contention/serialization stays NCU's side (anti-scope). |
-| 9.7.14.6 | `red` | `Unknown` (deliberate) | OK (deferred, Tier 1) — misfit §A; v1 policy: store-side bytes only (reads are implicit). |
+| 9.7.14.5 | `atom` | `Copy { space → space, width, width }` — one read and one write of the operand width in the instruction's state space, `Generic` without one | OK — misfit §A resolved by policy (2): bytes both ways, no flops; the `Copy` class the async-copy work introduced makes the two sides explicit. Contention/serialization stays NCU's side (anti-scope). |
+| 9.7.14.6 | `red` | `Memory { space, Store, width }` | OK — write side only; the read is implicit (v1's policy, kept). |
 | 9.7.14.7 | `red.async` | `Unknown` (via `red`) | OK (deferred, Tier 2) — misfit §A + async completion; cluster reductions. |
 | 9.7.14.8 | `multimem.red.async` | `Unknown` | OK (deferred, Tier 4) — misfit §A+§F. |
 | 9.7.14.9 | `vote` (deprecated) | `Sync` | OK. |
