@@ -53,6 +53,9 @@ pub struct ClassCounts {
     pub control: u32,
     pub ignore: u32,
     pub unknown: u32,
+    /// Statements the parser could not read; outside `total` and the
+    /// identity, reported alongside the unknowns.
+    pub unparsed: u32,
 }
 
 #[derive(Debug)]
@@ -83,7 +86,10 @@ pub fn collect(
             let mut counts = ClassCounts::default();
             let b = cfg.block(bid);
             for (si, stmt) in kernel.stmts[b.start..b.end].iter().enumerate() {
-                let Stmt::Instr(instr) = stmt else { continue };
+                let Stmt::Instr(instr) = stmt else {
+                    counts.unparsed += u32::from(matches!(stmt, Stmt::Unparsed { .. }));
+                    continue;
+                };
                 let provenance = b.start + si;
                 counts.total += 1;
                 let predicated = instr.predicate.is_some();
@@ -265,6 +271,13 @@ mod tests {
             "accounting identity"
         );
         assert_eq!(c.unknown, 1); // the mma
+    }
+
+    #[test]
+    fn unparsed_statements_are_counted_outside_the_identity() {
+        let (blocks, _) = collect_body("@@ not ptx;\nfma.rn.f32 %f1, %f1, %f1, %f1;\nret;");
+        let c = blocks[0].class_counts;
+        assert_eq!((c.total, c.flop, c.control, c.unparsed), (2, 1, 1, 1));
     }
 
     #[test]

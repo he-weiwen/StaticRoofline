@@ -31,13 +31,12 @@ mnemonic; the "Today" column names the arm where routing matters.
 
 A statement the parser cannot parse at all becomes `Stmt::Unparsed`
 and never reaches the classifier. Over the committed corpus that is
-policed by CI (`tests/parse-allowlist.txt`, empty today), but at
-`analyze` time the report pipeline skips `Unparsed` statements with no
-counter (`collect.rs`/`build.rs` both skip non-`Instr` statements) —
-this is the one hole in the "never dropped" guarantee; see the warts
-section. (The ISA's `|`-separated destination operands — `setp ...
-p|q`, `match.all.sync d|p`, `elect.sync d|p` — were the verified
-instance until the parser learned them.)
+policed by CI (`tests/parse-allowlist.txt`, empty today); at
+`analyze` time each one is counted in `instruction_classes.unparsed`
+and listed in the report's unknowns, the same treatment an
+unclassified instruction gets. (The ISA's `|`-separated destination
+operands — `setp ... p|q`, `match.all.sync d|p`, `elect.sync d|p` —
+were the verified unparsed instance until the parser learned them.)
 
 Past the parser, the model is deliberately simple. Each instruction
 maps to exactly **one** class:
@@ -558,15 +557,10 @@ a fixture.
 The audit found no wrong numbers — nothing is counted with incorrect
 flops or bytes. In descending order of importance:
 
-1. **`Unparsed` statements are invisible at analyze time.** The
-   classifier's "counted and named, never dropped" contract has no
-   parser-side counterpart in the report: `collect.rs`/`build.rs`
-   skip non-`Instr` statements, so PTX syntax the parser doesn't know
-   (verified: the `d|p` operand of `setp`/`match.all.sync`/
-   `elect.sync`) contributes nothing and is named nowhere in the
-   output. The CI parse-allowlist protects only the committed corpus.
-   Recommend an unparsed-statement counter in the report — the exact
-   analogue of the unknown-ops counter. The one contract gap found.
+1. ~~**`Unparsed` statements are invisible at analyze time.**~~ Fixed:
+   the report counts them (`instruction_classes.unparsed`) and lists
+   them under unknowns, and the `|` destination form that was the
+   verified instance now parses.
 2. **Collateral `Unknown`s from coarse arms**: integer `div` (caught
    by the SFU reservation); `addc`/`subc`/`madc` (miss the arm their
    `.cc` partners hit). One line each.

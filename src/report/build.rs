@@ -662,6 +662,18 @@ impl<'a> KernelBuilder<'a> {
                 }
             }
         }
+        let unparsed: u64 = self
+            .blocks
+            .iter()
+            .map(|b| b.class_counts.unparsed as u64)
+            .sum();
+        if unparsed > 0 {
+            out.push(UnknownEntry {
+                what: "unparsed statement".to_owned(),
+                count: Some(unparsed),
+                reason: "the parser could not read it — whatever it does is not counted".to_owned(),
+            });
+        }
         for (mnemonic, count) in unknown_ops {
             out.push(UnknownEntry {
                 what: format!("instruction `{mnemonic}`"),
@@ -776,6 +788,7 @@ impl<'a> KernelBuilder<'a> {
             classes.control += c.control as u64;
             classes.ignore += c.ignore as u64;
             classes.unknown += c.unknown as u64;
+            classes.unparsed += c.unparsed as u64;
         }
         let ranking = self.ranking();
         let (verdicts, verdict_hole) = self.verdicts(ranking.first().map(|(id, _)| *id), arches);
@@ -911,6 +924,21 @@ mod tests {
             sm(".shared .align 2 .b8 As[1024];\n.extern .shared .align 8 .b8 dsm[];\n"),
             (1024, true)
         );
+    }
+
+    #[test]
+    fn unparsed_statements_surface_as_a_counted_unknown() {
+        let opts = AnalyzeOptions::default();
+        let src = ".version 8.7\n.target sm_80\n.address_size 64\n\
+                   .visible .entry k()\n{\n@@ not ptx;\n.bogus 1;\nret;\n}\n";
+        let r = analyze(src, "t", &opts).expect("analyzes");
+        let k = &r.kernels[0];
+        assert_eq!(
+            (k.instruction_classes.total, k.instruction_classes.unparsed),
+            (1, 2)
+        );
+        let entry = k.unknowns.iter().find(|e| e.what == "unparsed statement");
+        assert_eq!(entry.map(|e| e.count), Some(Some(2)), "{:?}", k.unknowns);
     }
 
     /// A `bra` whose target matches no label surfaces as a report

@@ -104,6 +104,10 @@ pub struct InstructionClasses {
     pub control: u64,
     pub ignore: u64,
     pub unknown: u64,
+    /// Statements the parser could not read. Not part of `total` (they
+    /// are not instructions), so outside the accounting identity; each
+    /// is also an entry in `unknowns`.
+    pub unparsed: u64,
 }
 
 #[derive(Debug, Serialize)]

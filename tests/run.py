@@ -118,6 +118,23 @@ def _verify_instruction_accounting(report):
     return out
 
 
+def _verify_unparsed_surfaced(report):
+    """Statements the parser could not read are outside the instruction
+    total, so the only place they can be seen is the unknowns list:
+    the count there must equal instruction_classes.unparsed."""
+    out = []
+    for k in report.get("kernels", []):
+        n = k.get("instruction_classes", {}).get("unparsed", 0)
+        listed = [u.get("count", 0) for u in k.get("unknowns", [])
+                  if u.get("what") == "unparsed statement"]
+        if (sum(listed) if listed else 0) != n:
+            out.append(
+                f"kernel {k.get('name')}: {n} unparsed statement(s), "
+                f"unknowns list says {listed}"
+            )
+    return out
+
+
 def _verify_classification_coverage(report):
     """coverage.instructions_classified is derived from, and must agree
     with, the per-kernel class counts."""
@@ -194,6 +211,7 @@ def _verify_ai_consistency(report):
 
 VERIFIER_CHECKS = [
     ("instruction-accounting", _verify_instruction_accounting),
+    ("unparsed-surfaced", _verify_unparsed_surfaced),
     ("classification-coverage", _verify_classification_coverage),
     ("trip-coverage", _verify_trip_coverage),
     ("ai-consistency", _verify_ai_consistency),
@@ -672,6 +690,12 @@ def self_test():
     bad["kernels"][0]["loops"][0]["per_iteration"]["ai_global"] = 2.0
     ok(any("ai-consistency" in v for v in verify_report(bad)),
        "AI-ratio violation named")
+    bad = copy.deepcopy(good)
+    bad["kernels"][0]["instruction_classes"]["unparsed"] = 1
+    ok(any("unparsed-surfaced" in v for v in verify_report(bad)),
+       "unparsed statement missing from unknowns is named")
+    bad["kernels"][0]["unknowns"] = [{"what": "unparsed statement", "count": 1}]
+    ok(verify_report(bad) == [], "unparsed statement listed in unknowns passes")
 
     print(f"run.py --self-test: {n} assertions passed")
     return 0
