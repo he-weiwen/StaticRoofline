@@ -1,7 +1,8 @@
 # v2 (`ptxroof`) — Implementation Plan (Rust)
 
 A ground-up rewrite of the analyzer with PTX text as the input substrate,
-implemented in Rust. Lives entirely under `v2/`. v1 — the LLVM
+implemented in Rust, now the whole repository (it lived under `v2/`
+until v1 was removed). v1 — the LLVM
 `MachineFunctionPass` under `lib/` and `test/`, with its `STATUS.md`,
 `TUTORIAL.md`, `docs/` and the CUTLASS MIR corpus — was removed once
 Phase 1 shipped (last present at commit 690d81d; the kernel ladder it
@@ -393,7 +394,7 @@ report/html.rs, fuzz/, data/ptx_opcodes_*.txt, tools/extract-opcodes.py,
 tools/triton_fixture.py).
 
 ```
-v2/
+.                            # repository root (was v2/ until v1 was removed)
 ├── PLAN.md                  # this file; checklist ticked per PR
 ├── Cargo.toml               # lib `ptxroof` + bin `ptxroof`
 ├── rust-toolchain.toml

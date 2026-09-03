@@ -84,12 +84,12 @@ if sys.version_info < (3, 11):
 
 import tomllib
 
-V2_ROOT = Path(__file__).resolve().parents[1]
-CLI_TESTS_DIR = V2_ROOT / "tests" / "cli"
-ACCEPTANCE_DIR = V2_ROOT / "tests" / "acceptance"
-FIXTURES_DIR = V2_ROOT / "tests" / "fixtures"
+REPO_ROOT = Path(__file__).resolve().parents[1]
+CLI_TESTS_DIR = REPO_ROOT / "tests" / "cli"
+ACCEPTANCE_DIR = REPO_ROOT / "tests" / "acceptance"
+FIXTURES_DIR = REPO_ROOT / "tests" / "fixtures"
 STATUS_FILE = ACCEPTANCE_DIR / "status.toml"
-DEFAULT_BIN = V2_ROOT / "target" / "debug" / "ptxroof"
+DEFAULT_BIN = REPO_ROOT / "target" / "debug" / "ptxroof"
 CASE_TIMEOUT_S = 120
 
 # --------------------------------------------------------------------------
