@@ -20,7 +20,7 @@
 
 use crate::cfg::loops::LoopForest;
 use crate::cfg::{BlockId, Cfg};
-use crate::classify::{OpClass, classify};
+use crate::classify::{Direction, OpClass, classify};
 use crate::core::measurement::{MeasureKind, Measurement};
 use crate::core::{Kernel, Module, Stmt};
 
@@ -101,6 +101,10 @@ pub fn collect(
                         provenance,
                     });
                 };
+                let mut push_bytes = |space, direction, bytes: Option<u32>| match bytes {
+                    Some(n) => push(MeasureKind::Bytes { space, direction }, n as u64),
+                    None => push(MeasureKind::UnquantifiedBytes { space, direction }, 1),
+                };
                 match classify(module, instr) {
                     OpClass::Flop {
                         pipe,
@@ -124,12 +128,17 @@ pub fn collect(
                         bytes,
                     } => {
                         counts.memory += 1;
-                        match bytes {
-                            Some(n) => push(MeasureKind::Bytes { space, direction }, n as u64),
-                            None => {
-                                push(MeasureKind::UnquantifiedBytes { space, direction }, 1);
-                            }
-                        }
+                        push_bytes(space, direction, bytes);
+                    }
+                    OpClass::Copy {
+                        from,
+                        to,
+                        read_bytes,
+                        written_bytes,
+                    } => {
+                        counts.memory += 1;
+                        push_bytes(from, Direction::Load, read_bytes);
+                        push_bytes(to, Direction::Store, written_bytes);
                     }
                     OpClass::Sync => {
                         counts.sync += 1;
@@ -186,6 +195,7 @@ fn block_qualifier(forest: &LoopForest, exit_blocks: &[BlockId], block: BlockId)
 mod tests {
     use super::*;
     use crate::cfg::{build_cfg, loop_forest};
+    use crate::classify::Space;
     use crate::parse::parser::parse;
 
     fn collect_body(body: &str) -> (Vec<BlockMeasurements>, Module) {
@@ -274,6 +284,28 @@ mod tests {
             "accounting identity"
         );
         assert_eq!(c.unknown, 1); // the mma
+    }
+
+    #[test]
+    fn a_copy_is_one_memory_instruction_with_two_byte_records() {
+        let (blocks, _) = collect_body("cp.async.cg.shared.global [%r1], [%rd1], 16, 16;\nret;");
+        let c = blocks[0].class_counts;
+        assert_eq!((c.total, c.memory), (2, 1));
+        let bytes: Vec<_> = blocks[0]
+            .measurements
+            .iter()
+            .filter_map(|m| match m.kind {
+                MeasureKind::Bytes { space, direction } => Some((space, direction, m.count)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            bytes,
+            [
+                (Space::Global, Direction::Load, 16),
+                (Space::Shared, Direction::Store, 16)
+            ]
+        );
     }
 
     #[test]

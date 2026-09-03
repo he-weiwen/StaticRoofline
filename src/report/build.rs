@@ -498,7 +498,9 @@ impl<'a> KernelBuilder<'a> {
                 };
                 let is_workload = matches!(
                     crate::classify::classify(self.module, instr),
-                    crate::classify::OpClass::Flop { .. } | crate::classify::OpClass::Memory { .. }
+                    crate::classify::OpClass::Flop { .. }
+                        | crate::classify::OpClass::Memory { .. }
+                        | crate::classify::OpClass::Copy { .. }
                 );
                 if !is_workload {
                     continue;

@@ -23,7 +23,7 @@
 //! per invocation, add/sub/mul/min/max/abs/neg/copysign = 1, all
 //! multiplied by packed lanes (`f16x2` = ×2).
 
-use crate::core::{Instr, Module};
+use crate::core::{Instr, Module, Operand};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Precision {
@@ -147,6 +147,15 @@ pub enum OpClass {
         direction: Direction,
         bytes: Option<u32>,
     },
+    /// One instruction that both reads and writes memory: a read of
+    /// `read_bytes` from `from` and a write of `written_bytes` to `to`,
+    /// each per thread per execution, each `None` when unquantifiable.
+    Copy {
+        from: Space,
+        to: Space,
+        read_bytes: Option<u32>,
+        written_bytes: Option<u32>,
+    },
     /// Barriers, fences, and warp-collective communication.
     Sync,
     /// Branches, returns, calls.
@@ -243,6 +252,9 @@ pub fn classify(module: &Module, instr: &Instr) -> OpClass {
         "mma" => mma(&mods),
         "ldmatrix" => matrix_fragments(&mods, Direction::Load),
         "stmatrix" => matrix_fragments(&mods, Direction::Store),
+
+        // -- asynchronous copies -----------------------------------------------
+        "cp" => cp(module, instr, &mods),
 
         // -- sync / warp collectives ---------------------------------------
         "bar" | "barrier" | "mbarrier" | "membar" | "fence" => OpClass::Sync,
@@ -427,6 +439,42 @@ fn matrix_fragments(mods: &[&str], direction: Direction) -> OpClass {
         space: Space::Shared,
         direction,
         bytes: bits.and_then(|b| per_lane_bytes(count * rows * cols * b)),
+    }
+}
+
+/// `cp.async` (PTX ISA §9.7.9.26.3.1): "Operand src specifies a
+/// location in the global state space and dst specifies a location
+/// in the shared state space"; `cp-size` is an immediate, and the
+/// optional immediate `src-size` is the number of bytes actually
+/// read ("remaining bytes in destination dst are filled with
+/// zeros"). The group bookkeeping instructions (§9.7.9.26.3.2–3) and
+/// the mbarrier arrive are synchronization; the bulk and tensor
+/// forms (§9.7.9.26.4–5) are not modeled.
+fn cp(module: &Module, instr: &Instr, mods: &[&str]) -> OpClass {
+    let has = |name: &str| mods.contains(&name);
+    if !has("async") || has("bulk") || has("reduce") {
+        return OpClass::Unknown;
+    }
+    if has("commit_group") || has("wait_group") || has("wait_all") || has("mbarrier") {
+        return OpClass::Sync;
+    }
+    if !(has("shared") || has("shared::cta")) || !has("global") {
+        return OpClass::Unknown;
+    }
+    let immediates: Vec<u32> = module
+        .operand_ids(instr.operands)
+        .iter()
+        .skip(2)
+        .filter_map(|&id| match module.operand(id) {
+            Operand::Immediate(text) => module.interner.resolve(*text).parse().ok(),
+            _ => None,
+        })
+        .collect();
+    OpClass::Copy {
+        from: Space::Global,
+        to: Space::Shared,
+        read_bytes: immediates.get(1).or(immediates.first()).copied(),
+        written_bytes: immediates.first().copied(),
     }
 }
 
@@ -890,9 +938,52 @@ mod tests {
     }
 
     #[test]
+    fn cp_async_is_a_global_read_and_a_shared_write() {
+        let copy = |read_bytes, written_bytes| OpClass::Copy {
+            from: Space::Global,
+            to: Space::Shared,
+            read_bytes: Some(read_bytes),
+            written_bytes: Some(written_bytes),
+        };
+        // k12's form: nvcc writes the source size explicitly.
+        assert_eq!(
+            class_of("cp.async.cg.shared.global [%r20], [%rd11], 16, 16;"),
+            copy(16, 16)
+        );
+        assert_eq!(
+            class_of("cp.async.ca.shared::cta.global.L2::128B [%r1+8], [%rd1], 4;"),
+            copy(4, 4)
+        );
+        // Zero-fill form: 8 bytes read, 16 written.
+        assert_eq!(
+            class_of("cp.async.cg.shared.global [%r1], [%rd1], 16, 8;"),
+            copy(8, 16)
+        );
+        // ignore-src predicate and cache policy are not sizes.
+        assert_eq!(
+            class_of("cp.async.cg.shared.global.L2::cache_hint [%r1], [%rd1], 16, %p1, %rd2;"),
+            copy(16, 16)
+        );
+        for text in [
+            "cp.async.commit_group;",
+            "cp.async.wait_group 1;",
+            "cp.async.wait_all;",
+            "cp.async.mbarrier.arrive.shared.b64 [%r1];",
+        ] {
+            assert_eq!(class_of(text), OpClass::Sync, "{text}");
+        }
+        for text in [
+            "cp.async.bulk.shared::cluster.global.mbarrier::complete_tx::bytes [%r1], [%rd1], 1024, [%r2];",
+            "cp.reduce.async.bulk.global.shared::cta.bulk_group.add.f32 [%rd1], [%r1], 256;",
+            "cp.async.bulk.tensor.2d.shared::cluster.global.mbarrier::complete_tx::bytes [%r1], [%rd1, {%r2, %r3}], [%r4];",
+        ] {
+            assert_eq!(class_of(text), OpClass::Unknown, "{text}");
+        }
+    }
+
+    #[test]
     fn phase_2_families_are_unknown_not_zero() {
         for text in [
-            "cp.async.cg.shared.global [%r1], [%rd1], 16;",
             "atom.global.add.u32 %r1, [%rd1], %r2;",
             "sqrt.rn.f32 %f1, %f2;",
             "div.rn.f32 %f1, %f2, %f3;",

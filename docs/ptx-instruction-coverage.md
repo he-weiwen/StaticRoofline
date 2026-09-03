@@ -46,6 +46,7 @@ maps to exactly **one** class:
 | `Flop { precision, flops }` | CUDA-core FP work; fma/mad = 2, others = 1, × packed lanes (`f16x2` = ×2) | flops, bucketed by precision |
 | `NonFlopArith { Conversion / Integer / Predicate / Move }` | `cvt`; integer/bit ops; compares & selects; `mov`/`cvta` | none (instruction-mix reporting only) |
 | `Memory { space, direction, bytes }` | `bytes = None` feeds the unquantified counter, never zero | bytes, bucketed by state space |
+| `Copy { from, to, read_bytes, written_bytes }` | one instruction that reads one space and writes another (`cp.async`) — one memory instruction, two byte measurements | bytes on both sides |
 | `Sync` | barriers, fences, warp collectives | none |
 | `Control` | branches, returns, calls, traps | none |
 | `Ignore` | provably zero flop/byte (hints, `nop`) | none, by policy |
@@ -248,10 +249,10 @@ give the target class each should land as.
 
 | § | Instruction | Today | Verdict & recommendation |
 |---|---|---|---|
-| 9.7.9.26.3.1 | `cp.async` | `Unknown` (verified) | OK (deferred, **Tier 1**) — Ampere async pipelines; everything Triton emits for sm_80+ uses it. Target: `Memory`-like copy record, global→shared, bytes from the explicit size operand (verified statically present in k12). ⚠ mild ambiguity: with the optional `src-size < cp-size` zero-fill form, global reads `src-size` bytes but shared receives `cp-size`; pick one side per space and document (misfit §C footnote). |
-| 9.7.9.26.3.2 | `cp.async.commit_group` | `Unknown` (via `cp`) | OK (deferred, Tier 1) — target `Sync`; moves no bytes (v1 already made this distinction). |
-| 9.7.9.26.3.3 | `cp.async.wait_group` | `Unknown` (via `cp`) | OK (deferred, Tier 1) — target `Sync`. |
-| 9.7.9.26.3.3 | `cp.async.wait_all` | `Unknown` (via `cp`) | OK (deferred, Tier 1) — target `Sync`. |
+| 9.7.9.26.3.1 | `cp.async` | `Copy { Global → Shared, read = src-size or cp-size, written = cp-size }` — the immediates after the two addresses; a non-immediate `src-size` (a register) falls back to `cp-size`, an upper bound on the read | OK — the `cp` arm, pinned by k12/k14 (nvcc writes `..., 16, 16`). `collect` records one memory instruction with two byte measurements: a global load and a shared store. |
+| 9.7.9.26.3.2 | `cp.async.commit_group` | `Sync` | OK — moves no bytes. |
+| 9.7.9.26.3.3 | `cp.async.wait_group` | `Sync` | OK. |
+| 9.7.9.26.3.3 | `cp.async.wait_all` | `Sync` | OK. |
 | 9.7.9.26.4.1 | `cp.async.bulk` | `Unknown` | OK (deferred, Tier 2) — ⚠ misfit §B+§C: issued by one thread (or one elected thread) for a CTA-scale transfer — per-thread count multiplication would overcount by orders of magnitude; size may be a runtime register (→ `UnquantifiedBytes`). |
 | 9.7.9.26.4.2 | `cp.reduce.async.bulk` | `Unknown` | OK (deferred, Tier 2) — ⚠ misfit §A+§B: bulk copy *and* reduction arithmetic in one instruction. |
 | 9.7.9.26.4.3 | `cp.async.bulk.prefetch` | `Unknown` | OK (deferred, Tier 2) — target `Ignore`, consistent with the `prefetch` policy. |
@@ -337,7 +338,7 @@ transfers are a different roofline with different machine tables
 | 9.7.14.16.15 | `mbarrier.complete_tx` | `Sync` | OK. |
 | 9.7.14.16.16 | `mbarrier.arrive` | `Sync` | OK. |
 | 9.7.14.16.17 | `mbarrier.arrive_drop` | `Sync` | OK. |
-| 9.7.14.16.18 | `cp.async.mbarrier.arrive` | `Unknown` (via `cp`) | OK (deferred, Tier 1 rider) — target `Sync`; the `cp.async` arm must special-case it before the transfer variants. |
+| 9.7.14.16.18 | `cp.async.mbarrier.arrive` | `Sync` (the `cp` arm's `mbarrier` modifier) | OK. |
 | 9.7.14.16.19 | `mbarrier.test_wait` | `Sync` | OK. |
 | 9.7.14.16.19 | `mbarrier.try_wait` | `Sync` | OK. |
 | 9.7.14.16.20 | `mbarrier.pending_count` | `Sync` | OK. |

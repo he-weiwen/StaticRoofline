@@ -26,6 +26,8 @@ const FIXTURES: &[&str] = &[
     "k5/k5.sm_80.ptx",
     "k5/k5.sm_89.ptx",
     "k11/k11.sm_80.ptx",
+    "k12/k12.sm_80.ptx",
+    "k14/k14.sm_80.ptx",
     "mma_demo/mma_demo.sm_80.ptx",
     "micro/single_loop.ptx",
     "micro/branchy.ptx",
@@ -94,6 +96,8 @@ fn bound_flop_totals_agree_with_an_independent_evaluation() {
         ("k5/k5.sm_80.ptx", 2),
         ("k5/k5.sm_89.ptx", 2),
         ("k11/k11.sm_80.ptx", 2),
+        ("k12/k12.sm_80.ptx", 2),
+        ("k14/k14.sm_80.ptx", 2),
         ("micro/single_loop.ptx", 1),
         ("micro/branchy.ptx", 1),
     ];
