@@ -26,6 +26,7 @@ const FIXTURES: &[&str] = &[
     "k5/k5.sm_80.ptx",
     "k5/k5.sm_89.ptx",
     "k11/k11.sm_80.ptx",
+    "mma_demo/mma_demo.sm_80.ptx",
     "micro/single_loop.ptx",
     "micro/branchy.ptx",
     "micro/irreducible.ptx",

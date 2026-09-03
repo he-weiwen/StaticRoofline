@@ -240,6 +240,7 @@ pub fn classify(module: &Module, instr: &Instr) -> OpClass {
 
         // -- tensor cores (warp-collective; counts are per lane) ----------
         "wmma" => wmma(&mods),
+        "mma" => mma(&mods),
 
         // -- sync / warp collectives ---------------------------------------
         "bar" | "barrier" | "mbarrier" | "membar" | "fence" => OpClass::Sync,
@@ -355,6 +356,44 @@ fn wmma(mods: &[&str]) -> OpClass {
             }
         }
         _ => OpClass::Unknown,
+    }
+}
+
+/// `mma.sync` (PTX ISA §9.7.15.5.14): D = A·B + C once per warp for
+/// the shape modifier; the types follow the shape as `.dtype.atype
+/// .btype.ctype`. Sparse (`.sp`) and block-scaled forms are left
+/// Unknown: their flop count is a convention still to be chosen.
+fn mma(mods: &[&str]) -> OpClass {
+    if mods
+        .iter()
+        .any(|m| m.starts_with("sp") || *m == "block_scale")
+    {
+        return OpClass::Unknown;
+    }
+    let Some(shape_at) = mods.iter().position(|m| matrix_shape(m).is_some()) else {
+        return OpClass::Unknown;
+    };
+    let (m, n, k) = matrix_shape(mods[shape_at]).expect("position found a shape");
+    let types: Vec<&str> = mods[shape_at + 1..]
+        .iter()
+        .copied()
+        .filter(|t| element_bits(t).is_some())
+        .collect();
+    let Some(precision) = types.get(1).and_then(|t| tensor_precision(t)) else {
+        return OpClass::Unknown;
+    };
+    // §9.7.15.5.1: "A warp executing mma.m8n8k4 with .f16 floating point
+    // type will compute 4 MMA operations of shape .m8n8k4"; §9.7.15.5.2:
+    // the .f64 form computes one.
+    let operations = if (m, n, k) == (8, 8, 4) && precision == Precision::F16 {
+        4
+    } else {
+        1
+    };
+    OpClass::Flop {
+        pipe: Pipe::Tensor,
+        precision,
+        flops: operations * 2 * m * n * k / WARP_LANES,
     }
 }
 
@@ -740,9 +779,55 @@ mod tests {
     }
 
     #[test]
+    fn mma_sync_flops_by_shape_and_multiplicand_type() {
+        let tensor = |precision, flops| OpClass::Flop {
+            pipe: Pipe::Tensor,
+            precision,
+            flops,
+        };
+        // k14's form: 2*16*8*16 / 32 = 128 flops per lane.
+        assert_eq!(
+            class_of(
+                "mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32 {%f1,%f2,%f3,%f4}, {%r1,%r2,%r3,%r4}, {%r5,%r6}, {%f1,%f2,%f3,%f4};"
+            ),
+            tensor(Precision::F16, 128)
+        );
+        assert_eq!(
+            class_of(
+                "mma.sync.aligned.m16n8k8.row.col.f32.tf32.tf32.f32 {%f1}, {%r1}, {%r2}, {%f2};"
+            ),
+            tensor(Precision::TF32, 64)
+        );
+        assert_eq!(
+            class_of(
+                "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32 {%f1}, {%r1}, {%r2}, {%f2};"
+            ),
+            tensor(Precision::BF16, 128)
+        );
+        // m8n8k4: four MMAs per warp with f16, one with f64.
+        assert_eq!(
+            class_of("mma.sync.aligned.m8n8k4.row.col.f32.f16.f16.f32 {%f1}, {%r1}, {%r2}, {%f2};"),
+            tensor(Precision::F16, 64)
+        );
+        assert_eq!(
+            class_of(
+                "mma.sync.aligned.m8n8k4.row.col.f64.f64.f64.f64 {%fd1}, {%fd2}, {%fd3}, {%fd4};"
+            ),
+            tensor(Precision::F64, 16)
+        );
+        for text in [
+            "mma.sync.aligned.m16n8k32.row.col.satfinite.s32.s8.s8.s32 {%r1}, {%r2}, {%r3}, {%r4};",
+            "mma.sync.aligned.m16n8k32.row.col.f32.e4m3.e4m3.f32 {%f1}, {%r1}, {%r2}, {%f2};",
+            "mma.sp.sync.aligned.m16n8k32.row.col.f32.f16.f16.f32 {%f1}, {%r1}, {%r2}, {%f2}, %r3, 0;",
+            "mma.sync.aligned.m16n8k64.row.col.kind::mxf4.block_scale.f32.e2m1.e2m1.f32.ue8m0 {%f1}, {%r1}, {%r2}, {%f2}, %r3, {0, 0}, %r4, {0, 0};",
+        ] {
+            assert_eq!(class_of(text), OpClass::Unknown, "{text}");
+        }
+    }
+
+    #[test]
     fn phase_2_families_are_unknown_not_zero() {
         for text in [
-            "mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32 {%f1}, {%r1}, {%r2}, {%f2};",
             "cp.async.cg.shared.global [%r1], [%rd1], 16;",
             "atom.global.add.u32 %r1, [%rd1], %r2;",
             "sqrt.rn.f32 %f1, %f2;",
