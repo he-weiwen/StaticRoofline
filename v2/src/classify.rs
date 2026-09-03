@@ -1,7 +1,8 @@
 //! Instruction → semantic record (PLAN.md §6, PR 08).
 //!
-//! Transcribed from v1's `lib/PTX/Classifier.cpp` and narrowed to what
-//! the Phase 1 corpus contains: cuda-core flops, non-flop arithmetic
+//! Transcribed from v1's `lib/PTX/Classifier.cpp` (v1 lives only in
+//! git history now, last at 690d81d) and narrowed to what the Phase 1
+//! corpus contains: cuda-core flops, non-flop arithmetic
 //! (conversions counted separately — they are the precision-audit
 //! overhead S8 reports), memory, sync, control, ignore, unknown. The
 //! Phase 2 families (tensor/wmma, cp.async, atomics, SFU

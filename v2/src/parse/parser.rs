@@ -1,7 +1,8 @@
 //! Recursive-descent parser: PTX text → flat module IR.
 //!
-//! Transcribed from v1's `lib/PTX/Parser.cpp` (statement/operand
-//! grammar, per-statement error recovery, tolerant memory-operand skip)
+//! Transcribed from v1's `lib/PTX/Parser.cpp` (v1 lives only in git
+//! history now, last at 690d81d; statement/operand grammar,
+//! per-statement error recovery, tolerant memory-operand skip)
 //! and extended from inline-asm bodies to full programs: module
 //! directives, kernel signatures with param tables, `.reg`/`.shared`
 //! declarations, labels, extended `.loc` (plain and

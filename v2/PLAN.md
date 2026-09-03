@@ -1,9 +1,12 @@
 # v2 (`ptxroof`) — Implementation Plan (Rust)
 
 A ground-up rewrite of the analyzer with PTX text as the input substrate,
-implemented in Rust. Lives entirely under `v2/`; v1 (`lib/`, `test/`)
-stays untouched and working; a differential harness (Phase 2) can prove
-parity before v1 retires into maintenance mode.
+implemented in Rust. Lives entirely under `v2/`. v1 — the LLVM
+`MachineFunctionPass` under `lib/` and `test/`, with its `STATUS.md`,
+`TUTORIAL.md`, `docs/` and the CUTLASS MIR corpus — was removed once
+Phase 1 shipped (last present at commit 690d81d; the kernel ladder it
+held moved to `tests/fixtures/src/`). Anything below that still says
+"v1" refers to that history.
 
 The plan has two phases. **Phase 1 (PRs 01–13)** builds the minimal
 *genuinely useful* analyzer: `ptxroof analyze` on nvcc PTX, producing a
@@ -16,14 +19,15 @@ contains only what Phase 1 needs; extensibility lives in the
 architecture (enums, the verb-subcommand CLI, the registry hooks), not
 in dormant code.
 
-Companion to `STATUS.md` (v1 state) and `docs/measurement-refactor.md`
-(v1's value-stream refactor, whose Measurement contract this design keeps
-and extends). This revision supersedes the earlier C++17 draft of this
+Originally a companion to v1's `STATUS.md` and
+`docs/measurement-refactor.md` (v1's value-stream refactor, whose
+Measurement contract this design keeps and extends); both are in git
+history at 690d81d. This revision supersedes the earlier C++17 draft of this
 plan: with the LLVM dependency gone, every boundary of the tool is text
 (PTX/SASS/CSV in, JSON/HTML out, compilers as subprocesses), so the
 implementation language has zero interop surface — and the design's
 central types are sum types, which Rust expresses natively. The v1
-`lib/PTX/` C++ code (~900 LOC) is kept as a **reference specification**
+`lib/PTX/` C++ code (~900 LOC) served as the **reference specification**
 for transcription, pinned by shared expected-output tests, not ported.
 
 This document is the execution plan: step by step, PR by PR, every PR
@@ -246,8 +250,8 @@ status changes in that file.
 **T4 — live matrix (scheduled, non-blocking; Phase 2).** Recompiles the
 fixture sources with whatever toolchains are present (host nvcc 13.2,
 clang/LLVM trunk), runs relaxed invariant rules (the `check` DSL with
-tolerant bounds), runs the v1↔v2 differential harness, and runs the
-cargo-fuzz targets for a fixed wall-clock budget. Catches toolchain
+tolerant bounds), and runs the cargo-fuzz targets for a fixed
+wall-clock budget. Catches toolchain
 drift; never blocks a PR.
 
 **Minimum-coverage thresholds (cross-cutting).** The analyzer emits
@@ -294,10 +298,12 @@ instruction. Each check registers as its analysis lands (PR 08, 09,
   inject `STL`/`LDL` lines into SASS). Hand-edited files carry a
   `// HAND-EDITED:` header stating base fixture and edit.
 - **Transcription fidelity.** PRs 03/04/08 transcribe the v1 C++
-  lexer/parser/classifier. The C++ files are the reference spec; the
-  corpus-wide checks (lex-all, parse-all, classify-all) plus the v1
-  differential (Phase 2) pin the transcription. The C++ reference is
-  not deleted until the Phase 2 switchover.
+  lexer/parser/classifier. The C++ files were the reference spec; the
+  corpus-wide checks (lex-all, parse-all, classify-all) pin the
+  transcription. The C++ reference was removed with the rest of v1
+  after Phase 1 (git history, 690d81d); the planned v1↔v2 differential
+  is retired with it — the fixtures' committed expected outputs, which
+  v1 agreed with at PR 08, are the surviving pin.
 - Environment pins for initial generation (recorded per fixture):
   CUDA 13.2 (`V13.2.78`), fixtures target sm_80 (cross-compilation
   needs no matching GPU; since PR 14, k1/k5 are also committed at
@@ -339,7 +345,7 @@ S1.2 (the sm_89 fan-out) follows in PR 14.
 
 | ID | User question | Fixtures | Key assertions | Lands |
 |----|---------------|----------|----------------|-------|
-| S1.1 / S1.2 | Is this kernel's design point what I computed on paper? (and: does the verdict follow the part?) | `k5` (= `test/5_2d_blocktiling.cuh`, BM=64 BN=64 BK=8 TM=8 TN=8) sm_80 + sm_89 PTX | nested loop tree w/ source lines; trips `ceildiv(K, 8)` (the latch is `setp.lt.u32`, so the general form is ceil-div); fully-unrolled register-tile loops recovered by line aggregation; per-iter flops/bytes; AI(global)=32.0; per-arch knee verdicts (sm_80 compute-bound, sm_86 memory-bound). S1.2: the same kernel at `.target sm_89`, no `--arch` flag — the verdict defaults to the target directive (RTX 4090 table) and lands memory-bound (AI 32 < f32 knee 81.9) | PR 13 / PR 14 |
+| S1.1 / S1.2 | Is this kernel's design point what I computed on paper? (and: does the verdict follow the part?) | `k5` (= `tests/fixtures/src/5_2d_blocktiling.cuh`, BM=64 BN=64 BK=8 TM=8 TN=8) sm_80 + sm_89 PTX | nested loop tree w/ source lines; trips `ceildiv(K, 8)` (the latch is `setp.lt.u32`, so the general form is ceil-div); fully-unrolled register-tile loops recovered by line aggregation; per-iter flops/bytes; AI(global)=32.0; per-arch knee verdicts (sm_80 compute-bound, sm_86 memory-bound). S1.2: the same kernel at `.target sm_89`, no `--arch` flag — the verdict defaults to the target directive (RTX 4090 table) and lands memory-bound (AI 32 < f32 knee 81.9) | PR 13 / PR 14 |
 | S6 | Where does the work go? | `k2` | loops ranked by symbolic weight: main loop `K`-dependent, remainder `K mod 4`; headline names the main loop's source line; unroll main+remainder pair linked as one logical loop (the bet-2 ranking claim, tested) | PR 12 |
 | S7.1 / S7.2 | Did tiling pay off? | `k1`, `k5` | two independent runs, no `diff` verb: AI(k1 main loop) = 0.5 flop/B vs AI(k5 tile loop) = 32 flop/B, both shape-independent (no `--bind`) — the contrast is two comparable numbers. (0.5, not the 0.25 the design table first guessed: 8 flops / 16 B per unrolled iteration under the same fma=2 convention that makes k5 = 32.) | PR 12 |
 | S8 | Am I on the precision path I think? | `k2` | flop table: f32 cuda-core only, **0 f16 flops** despite `__half` data (compute is converted to f32); 8 `cvt` per main-loop iteration counted as conversion overhead; 2 B loads ×8/iter; one guarded 2 B store in the epilogue (`at_most` — the bounds guard makes kernel totals upper bounds) | PR 12 |
@@ -355,7 +361,7 @@ when the work starts.
 | S2 | Did this build regress spills? | `k12` PTX + two SASS builds of the *same* PTX: default vs `ptxas --maxrregcount=32` (real spills, not hand-edited) | static columns identical; SASS column: reg + spill-bytes delta; per-loop attribution of `STL`/`LDL` | first spill-regression hunt → `diff` + SASS sidecar |
 | S3 | Are my global accesses coalesced? | `k2` sm_80 PTX | load A uniform/broadcast, load B coalesced @ 2 B width w/ transaction note (the precision/pipe assertions this row once carried moved to Phase 1's S8) | first uncoalesced-access suspicion → affine + coalescing |
 | S4 | Can it handle a black-box Triton kernel? | Triton 3.5.1 matmul w/ one strided operand (generator script committed), no-`.loc` hand-edited variant | parses; structural loop naming without `.loc`; trips honestly `unknown`; strided access flagged with stride expr | first non-nvcc kernel → Triton producers + coalescing |
-| S5 | Can CI gate a kernel property? | `k14` (= `test/14_ldmatrix_mma.cuh`) sm_90 PTX + hand-edited copy with `mma.sync` removed + `rules.toml` | original passes; the edited copy fails exit-code 1 with message naming loop + `tensor_flops_per_iter: got 0` | first CI gate on a kernel → `check` verb |
+| S5 | Can CI gate a kernel property? | `k14` (= `tests/fixtures/src/14_ldmatrix_mma.cuh`) sm_90 PTX + hand-edited copy with `mma.sync` removed + `rules.toml` | original passes; the edited copy fails exit-code 1 with message naming loop + `tensor_flops_per_iter: got 0` | first CI gate on a kernel → `check` verb |
 
 Table values are design intent; expected outputs are authored from
 fixture reality when each scenario's def is committed (PR 02 for all
@@ -408,6 +414,7 @@ v2/
 ├── data/machine/            # per-SM peak/BW tables (TOML, sources cited inline)
 ├── tests/                   # cargo integration tests (*.rs) — and, as plain data:
 │   ├── run.py               # CLI test runner (T2 + T3)
+│   ├── fixtures/src/        # the CUDA kernel ladder (1_naive … 14_ldmatrix_mma .cuh)
 │   ├── fixtures/<name>/     # {src ref, *.ptx, regen.sh, HAND-EDITED}
 │   ├── cli/<case>/          # CLI tests: case.toml + expected.json / expected.checks
 │   └── acceptance/          # status.toml + scenario test defs
@@ -907,10 +914,7 @@ drift. `cargo-fuzz` lexer/parser targets (no panics, ever, on
 arbitrary bytes; mutational, corpus-seeded; the flat IR's
 drop-as-one-block lifecycle keeps fuzz throughput high);
 `tools/live_matrix.sh` (T4: recompile fixture sources with host
-toolchains, relaxed invariant rules); the **v1↔v2 differential** on
-the five shared cases (exact agreement on flops, precision buckets,
-global/local bytes — after which v1 goes maintenance-mode and the C++
-reference under `lib/PTX/` is annotated as superseded); the full user
+toolchains, relaxed invariant rules); the full user
 guide with scenarios as worked examples; `cargo doc` clean with
 `#![warn(missing_docs)]`; doc lint (CLI examples in docs are executed
 by a runner case — docs can't rot silently).
@@ -934,9 +938,9 @@ they extend; no backlog item blocks another.
 ## 8. Risks and open questions
 
 - **Transcription fidelity** (C++ → Rust for lexer/parser/classifier):
-  mitigated by the corpus-wide checks landing in the same PRs and the
-  v1 differential (Phase 2); the C++ reference stays in-tree until the
-  switchover.
+  mitigated by the corpus-wide checks landing in the same PRs. The
+  planned v1 differential was retired when v1 was removed after
+  Phase 1 (§3); the C++ reference is in git history at 690d81d.
 - **Rust idiom frictions are resolved by the flat-IR ground rule (§2)**,
   not discovered mid-build: no pointer structures means no graph/
   lifetime fights with the borrow checker. The residual cost is index
@@ -1015,4 +1019,4 @@ Phase 2 (backlog — tick when triggered and executed):
 - [ ] NCU import (three-column report)
 - [ ] `annotate` HTML
 - [ ] self-auditing extras (opcode inventory, `capabilities`, histogram, proptest)
-- [ ] hardening + switchover (fuzz, live matrix, v1 differential, docs)
+- [ ] hardening (fuzz, live matrix, docs) — the v1 differential/switchover is retired: v1 was removed after Phase 1
