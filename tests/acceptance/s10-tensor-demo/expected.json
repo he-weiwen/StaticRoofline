@@ -11,7 +11,7 @@
         },
         "bytes": {"global": {"load": {"expr": "32", "at_most": false},
                              "store": {"expr": "32", "at_most": false}}},
-        "ai_global": 4.0
+        "ai_global": {"value": 4.0, "bound": "exact"}
       },
       "unknowns": []
     },
@@ -26,7 +26,7 @@
         },
         "bytes": {"global": {"load": {"expr": "24", "at_most": false},
                              "store": {"expr": "16", "at_most": false}}},
-        "ai_global": 3.2
+        "ai_global": {"value": 3.2, "bound": "exact"}
       },
       "unknowns": []
     }

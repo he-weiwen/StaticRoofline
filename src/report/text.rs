@@ -56,7 +56,7 @@ pub fn render(report: &Report) -> String {
                 kn.peak_tflops,
                 kn.dram_bw_gbps,
                 kn.loop_name,
-                kn.ai_global
+                intensity(&kn.ai_global)
             );
         }
         if let Some(l) = &k.launch {
@@ -149,6 +149,23 @@ fn render_loop(w: &mut String, l: &LoopNode, depth: usize) {
     }
 }
 
+fn intensity(ai: &Intensity) -> String {
+    let sign = match ai.bound {
+        Bound::Exact => "=",
+        Bound::AtLeast => ">=",
+        Bound::AtMost => "<=",
+    };
+    format!("{sign} {}", ai.value)
+}
+
+fn both_sides_are_bounds(a: &Aggregates) -> bool {
+    let flops = [&a.flops, &a.tensor_flops, &a.sfu_flops]
+        .iter()
+        .any(|t| t["total"].at_most);
+    let global = &a.bytes["global"];
+    flops && (global.load.at_most || global.store.at_most)
+}
+
 fn count(c: &Count) -> String {
     if c.at_most {
         format!("<= {}", c.expr)
@@ -193,8 +210,17 @@ fn render_aggregates(w: &mut String, a: &Aggregates, pad: &str) {
     if a.conversions.expr != "0" {
         let _ = writeln!(w, "{pad}conversions = {}", count(&a.conversions));
     }
-    if let Some(ai) = a.ai_global {
-        let _ = writeln!(w, "{pad}AI(global) = {ai} flop/B");
+    match a.ai_global {
+        Some(ai) => {
+            let _ = writeln!(w, "{pad}AI(global) {} flop/B", intensity(&ai));
+        }
+        None if both_sides_are_bounds(a) => {
+            let _ = writeln!(
+                w,
+                "{pad}AI(global): not bounded (flops and global bytes are both upper bounds)"
+            );
+        }
+        None => {}
     }
     if !a.unrolled_source_lines.is_empty() {
         let lines: Vec<String> = a

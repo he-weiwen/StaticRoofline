@@ -87,7 +87,10 @@ read and a shared write. Every peak in `data/machine/*.toml` cites the
 NVIDIA document it came from.
 
 Counts marked `<=` are upper bounds (code behind data-dependent or
-bounds-check branches). Whatever the tool cannot derive it reports as a
+bounds-check branches). A ratio of a bound is itself a bound in one
+direction only: `AI(global) >= 64` means exact flops over bytes that
+are an upper bound, and when both sides are bounds no AI is printed at
+all. Whatever the tool cannot derive it reports as a
 *named unknown* with a reason — an unknown is a result, not an error.
 That includes statements the parser cannot read, integer, sparse and
 block-scaled MMA kinds, and the Hopper bulk/TMA copies, which are

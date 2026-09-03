@@ -462,10 +462,21 @@ impl<'a> KernelBuilder<'a> {
             })
             .collect();
 
-        // AI(global): defined when flops and global bytes are constants.
+        let flops_at_most = flops.values().any(|t| t.total.at_most);
         let ai_global = match (all_flops.as_const(), bytes.get("global")) {
             (Some(f), Some((l, s))) => match (l.expr().as_const(), s.expr().as_const()) {
-                (Some(lb), Some(sb)) if lb + sb > 0 => Some(f as f64 / (lb + sb) as f64),
+                (Some(lb), Some(sb)) if lb + sb > 0 => {
+                    let bound = match (flops_at_most, l.at_most || s.at_most) {
+                        (false, false) => Some(Bound::Exact),
+                        (true, false) => Some(Bound::AtMost),
+                        (false, true) => Some(Bound::AtLeast),
+                        (true, true) => None,
+                    };
+                    bound.map(|bound| Intensity {
+                        value: f as f64 / (lb + sb) as f64,
+                        bound,
+                    })
+                }
                 _ => None,
             },
             _ => None,

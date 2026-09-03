@@ -6,7 +6,7 @@
       "instruction_classes": {"unknown": 0, "unparsed": 0},
       "knees": [
         {"arch": "sm_80", "loop": "14_ldmatrix_mma.cuh:208", "pipe": "tensor",
-         "precision": "f16", "ai_global": 64.0, "peak_tflops": 312.0,
+         "precision": "f16", "ai_global": {"value": 64.0, "bound": "at_least"}, "peak_tflops": 312.0,
          "dram_bw_gbps": 1555.0, "knee": 200.64308681672026}
       ],
       "loops": [
@@ -21,7 +21,7 @@
                          "store": {"expr": "0", "at_most": false}},
               "shared": {"load": {"expr": "128", "at_most": false}}
             },
-            "ai_global": 64.0
+            "ai_global": {"value": 64.0, "bound": "at_least"}
           },
           "loops": []
         },

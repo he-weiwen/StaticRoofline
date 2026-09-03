@@ -130,7 +130,7 @@ pub struct Knee {
     /// "tensor", "sfu") and precision; the knee uses its peak.
     pub pipe: String,
     pub precision: String,
-    pub ai_global: f64,
+    pub ai_global: Intensity,
     /// `knee = peak_tflops * 1000 / dram_bw_gbps`, both cited in the
     /// machine table.
     pub peak_tflops: f64,
@@ -203,13 +203,31 @@ pub struct Aggregates {
     pub bytes: BTreeMap<String, DirectionCounts>,
     pub conversions: Count,
     /// Flops of all three pipes per global byte, when both are
-    /// constants and bytes > 0.
+    /// constants, bytes > 0, and at most one side is an upper bound
+    /// (a bound over a bound bounds nothing).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub ai_global: Option<f64>,
+    pub ai_global: Option<Intensity>,
     /// Straight-line repeated source lines (fully-unrolled loops):
     /// "file:line" → workload-op copies. Empty = omitted.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub unrolled_source_lines: BTreeMap<String, u64>,
+}
+
+/// A flop/byte ratio with the direction it is known in: `exact`,
+/// `at_least` (exact flops over bytes that are an upper bound) or
+/// `at_most` (flops that are an upper bound over exact bytes).
+#[derive(Debug, Serialize, Clone, Copy, PartialEq)]
+pub struct Intensity {
+    pub value: f64,
+    pub bound: Bound,
+}
+
+#[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Bound {
+    Exact,
+    AtLeast,
+    AtMost,
 }
 
 #[derive(Debug, Serialize, Clone, PartialEq)]

@@ -189,6 +189,7 @@ def _verify_ai_consistency(report):
         ai = agg.get("ai_global")
         if ai is None:
             return
+        ai = ai["value"]
         try:
             flops = sum(int(agg[t]["total"]["expr"])
                         for t in ("flops", "tensor_flops", "sfu_flops") if t in agg)
@@ -658,7 +659,7 @@ def self_test():
                 "loops": [
                     {"name": "l", "trips": {"expr": "8"},
                      "per_iteration": {
-                         "ai_global": 0.5,
+                         "ai_global": {"value": 0.5, "bound": "exact"},
                          "flops": {"total": {"expr": "8"}},
                          "bytes": {"global": {"load": {"expr": "16"},
                                               "store": {"expr": "0"}}},
@@ -689,7 +690,7 @@ def self_test():
     ok(any("trip-coverage" in v for v in verify_report(bad)),
        "trip-coverage violation named")
     bad = copy.deepcopy(good)
-    bad["kernels"][0]["loops"][0]["per_iteration"]["ai_global"] = 2.0
+    bad["kernels"][0]["loops"][0]["per_iteration"]["ai_global"]["value"] = 2.0
     ok(any("ai-consistency" in v for v in verify_report(bad)),
        "AI-ratio violation named")
     bad = copy.deepcopy(good)
