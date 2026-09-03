@@ -565,6 +565,33 @@ impl<'a> Tracer<'a> {
                     _ => Err("shift by a non-constant amount".to_owned()),
                 }
             }
+            "shr" if ops.len() == 3 => {
+                let v = arg(1)?;
+                let sh = arg(2)?;
+                let Some(c) = sh.iv.is_none().then(|| sh.base.as_const()).flatten() else {
+                    return Err("shift by a non-constant amount".to_owned());
+                };
+                if v.iv.is_some() {
+                    return Err("shift applied to an induction variable".to_owned());
+                }
+                let signed_width = mods.iter().find_map(|m| match *m {
+                    "s16" => Some(16),
+                    "s32" => Some(32),
+                    "s64" => Some(64),
+                    _ => None,
+                });
+                // PTX ISA §9.7.8.9 (shr): "Signed shifts fill with the sign
+                // bit" — in this tracer's nonnegative domain that bit is 0,
+                // so shifting it down is nvcc's `x / 2^n` sign fix-up.
+                if signed_width == Some(c + 1) {
+                    return Ok(Affine::invariant(SymExpr::Const(0)));
+                }
+                if (0..63).contains(&c) {
+                    Ok(Affine::invariant(SymExpr::floor_div(v.base, 1i64 << c)))
+                } else {
+                    Err(format!("shift by {c} is out of range"))
+                }
+            }
             "mul" if ops.len() == 3 => {
                 let a = arg(1)?;
                 let b = arg(2)?;
@@ -765,6 +792,23 @@ mod tests {
             trips[0].1.as_ref().unwrap().to_string(),
             "ceildiv(param_0, 8)"
         );
+    }
+
+    #[test]
+    fn signed_division_by_power_of_two_bound() {
+        // nvcc's lowering of `n / 16` for a signed `n`, verbatim from the
+        // k14 fixture: sign bit, shifted down, added, arithmetic shift.
+        let src = kernel_with(
+            N_PARAM,
+            "ld.param.u32 %r1, [k_param_0];\n\
+             shr.s32 %r2, %r1, 31;\nshr.u32 %r3, %r2, 28;\n\
+             add.s32 %r4, %r1, %r3;\nshr.s32 %r5, %r4, 4;\n\
+             mov.u32 %r6, 0;\n\
+             $L__L:\nadd.s32 %r6, %r6, 1;\n\
+             setp.lt.u32 %p1, %r6, %r5;\n@%p1 bra $L__L;\nret;",
+        );
+        let trips = trips_of(&src);
+        assert_eq!(trips[0].1.as_ref().unwrap().to_string(), "param_0 / 16");
     }
 
     #[test]
