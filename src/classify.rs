@@ -287,6 +287,16 @@ fn element_bits(ty: &str) -> Option<u32> {
     })
 }
 
+fn tensor_precision(ty: &str) -> Option<Precision> {
+    Some(match ty {
+        "f16" => Precision::F16,
+        "bf16" => Precision::BF16,
+        "tf32" => Precision::TF32,
+        "f64" => Precision::F64,
+        _ => return None,
+    })
+}
+
 /// One lane's share of a warp-wide byte count, exact or nothing.
 fn per_lane_bytes(bits: u32) -> Option<u32> {
     bits.is_multiple_of(8 * WARP_LANES)
@@ -325,6 +335,23 @@ fn wmma(mods: &[&str]) -> OpClass {
                     Direction::Store
                 },
                 bytes: per_lane_bytes(elements * bits),
+            }
+        }
+        (Some(&"mma"), _) => {
+            // §9.7.15.4.5: "For wmma.mma without explicit .atype and
+            // .btype: .atype and .btype are implicitly set to .f16."
+            let atype = if types.len() == 2 {
+                "f16"
+            } else {
+                types.get(1).copied().unwrap_or("")
+            };
+            match tensor_precision(atype) {
+                Some(precision) => OpClass::Flop {
+                    pipe: Pipe::Tensor,
+                    precision,
+                    flops: 2 * m * n * k / WARP_LANES,
+                },
+                None => OpClass::Unknown,
             }
         }
         _ => OpClass::Unknown,
@@ -666,6 +693,49 @@ mod tests {
                 direction: Direction::Load,
                 bytes: Some(32)
             }
+        );
+    }
+
+    #[test]
+    fn wmma_mma_is_tensor_flops_by_multiplicand_type() {
+        // One m16n16k16 MMA per warp: 2*16*16*16 / 32 = 256 flops per lane;
+        // `.f32.f32` alone means f16 multiplicands (§9.7.15.4.5).
+        assert_eq!(
+            class_of(
+                "wmma.mma.sync.aligned.row.row.m16n16k16.f32.f32 {%f1, %f2, %f3, %f4, %f5, %f6, %f7, %f8}, {%r1, %r2, %r3, %r4, %r5, %r6, %r7, %r8}, {%r9, %r10, %r11, %r12, %r13, %r14, %r15, %r16}, {%f1, %f2, %f3, %f4, %f5, %f6, %f7, %f8};"
+            ),
+            OpClass::Flop {
+                pipe: Pipe::Tensor,
+                precision: Precision::F16,
+                flops: 256
+            }
+        );
+        assert_eq!(
+            class_of(
+                "wmma.mma.sync.aligned.row.col.m8n32k16.f32.bf16.bf16.f32 {%f1}, {%r1}, {%r2}, {%f2};"
+            ),
+            OpClass::Flop {
+                pipe: Pipe::Tensor,
+                precision: Precision::BF16,
+                flops: 256
+            }
+        );
+        assert_eq!(
+            class_of(
+                "wmma.mma.sync.aligned.row.col.m8n8k4.rn.f64.f64.f64.f64 {%fd1}, {%fd2}, {%fd3}, {%fd4};"
+            ),
+            OpClass::Flop {
+                pipe: Pipe::Tensor,
+                precision: Precision::F64,
+                flops: 16
+            }
+        );
+        // Integer MMA is not floating-point work: loud, not zero.
+        assert_eq!(
+            class_of(
+                "wmma.mma.sync.aligned.row.col.m16n16k16.s32.s8.s8.s32 {%r1}, {%r2}, {%r3}, {%r4};"
+            ),
+            OpClass::Unknown
         );
     }
 

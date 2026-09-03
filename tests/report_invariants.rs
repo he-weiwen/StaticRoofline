@@ -25,6 +25,7 @@ const FIXTURES: &[&str] = &[
     "k2/k2.sm_80.ptx",
     "k5/k5.sm_80.ptx",
     "k5/k5.sm_89.ptx",
+    "k11/k11.sm_80.ptx",
     "micro/single_loop.ptx",
     "micro/branchy.ptx",
     "micro/irreducible.ptx",
@@ -91,6 +92,7 @@ fn bound_flop_totals_agree_with_an_independent_evaluation() {
         ("k2/k2.sm_80.ptx", 2),
         ("k5/k5.sm_80.ptx", 2),
         ("k5/k5.sm_89.ptx", 2),
+        ("k11/k11.sm_80.ptx", 2),
         ("micro/single_loop.ptx", 1),
         ("micro/branchy.ptx", 1),
     ];
@@ -108,10 +110,14 @@ fn bound_flop_totals_agree_with_an_independent_evaluation() {
             ..Default::default()
         };
         let report = analyze(&src, fixture, &opts).expect("analyzes");
-        let reported: i64 = report.kernels[0].totals.flops["total"]
-            .expr
-            .parse()
-            .expect("bound total is numeric");
+        let totals = &report.kernels[0].totals;
+        let table_total =
+            |t: &std::collections::BTreeMap<String, ptxroof::report::tree::Count>| -> i64 {
+                t["total"].expr.parse().expect("bound total is numeric")
+            };
+        let reported = table_total(&totals.flops)
+            + table_total(&totals.tensor_flops)
+            + table_total(&totals.sfu_flops);
 
         // Path 2: flat per-block tallies × numerically evaluated chains.
         let m = parse(&src).expect("parses");
@@ -144,11 +150,11 @@ fn bound_flop_totals_agree_with_an_independent_evaluation() {
             independent += flat * mult;
         }
         assert_eq!(reported, independent, "{fixture}: two paths disagree");
-        // Sanity: the f32 column carries everything in this corpus.
-        let f32_only: i64 = report.kernels[0].totals.flops[Precision::F32.key()]
+        // Sanity: cuda-core work in this corpus is all f32.
+        let f32_only: i64 = totals.flops[Precision::F32.key()]
             .expr
             .parse()
             .expect("numeric");
-        assert_eq!(f32_only, reported, "{fixture}");
+        assert_eq!(f32_only, table_total(&totals.flops), "{fixture}");
     }
 }
