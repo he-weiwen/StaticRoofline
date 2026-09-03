@@ -11,3 +11,16 @@ f16 = 133.8
 bf16 = 133.8
 f32 = 66.9
 f64 = 33.5
+
+# Tensor cores. Source: NVIDIA H100 product page
+# (nvidia.com/en-us/data-center/h100/), Specifications, H100 SXM: "FP64
+# Tensor Core 67 teraFLOPS", "TF32 Tensor Core 989 teraFLOPS*",
+# "BFLOAT16 Tensor Core 1,979 teraFLOPS*", "FP16 Tensor Core 1,979
+# teraFLOPS*" (* = with sparsity). Dense is half the sparsity figure
+# (the A100 page above lists both for the same convention); FP64
+# tensor cores have no sparsity mode, so 67 is dense.
+[tensor_peak_tflops]
+f16 = 989.5
+bf16 = 989.5
+tf32 = 494.5
+f64 = 67.0

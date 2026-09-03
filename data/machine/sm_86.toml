@@ -11,3 +11,16 @@ f16 = 35.58
 bf16 = 35.58
 f32 = 35.58
 f64 = 0.556
+
+# Tensor cores. Source: NVIDIA Ampere GA102 GPU Architecture whitepaper,
+# Table 9 "Comparison of GeForce RTX 3090 to NVIDIA Titan RTX", RTX 3090
+# column: "Peak FP16 Tensor TFLOPS with FP16 Accumulate 142/284", "Peak
+# FP16 Tensor TFLOPS with FP32 Accumulate 71/142", "Peak BF16 Tensor
+# TFLOPS with FP32 Accumulate 71/142", "Peak TF32 Tensor TFLOPS 35.6/71"
+# (x/y = dense/with sparsity). FP32-accumulate dense figures here — the
+# `.f32.f16.f16.f32` GEMM shape; GeForce parts run FP16-accumulate at
+# twice this rate. No FP64 tensor cores on GA10x (same document).
+[tensor_peak_tflops]
+f16 = 71.0
+bf16 = 71.0
+tf32 = 35.6

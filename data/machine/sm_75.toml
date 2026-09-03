@@ -9,3 +9,10 @@ dram_bw_gbps = 300.0
 f16 = 16.2
 f32 = 8.1
 f64 = 0.25
+
+# Tensor cores. Source: NVIDIA T4 product page
+# (nvidia.com/en-us/data-center/tesla-t4/), Specifications:
+# "Mixed Precision (FP16/FP32) 65 FP16 TFLOPS". Dense; Turing has no
+# sparsity mode.
+[tensor_peak_tflops]
+f16 = 65.0

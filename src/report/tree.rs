@@ -120,7 +120,9 @@ pub struct Verdict {
     /// The loop the verdict is about.
     #[serde(rename = "loop")]
     pub loop_name: String,
-    /// Dominant flop precision of that loop; the knee uses its peak.
+    /// Dominant flop bucket of that loop — pipe ("cuda-core",
+    /// "tensor", "sfu") and precision; the knee uses its peak.
+    pub pipe: String,
     pub precision: String,
     pub ai_global: f64,
     pub knee: f64,

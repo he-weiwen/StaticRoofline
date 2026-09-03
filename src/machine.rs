@@ -12,6 +12,7 @@
 //! AI(global) against the knee — both numbers appear in the report so
 //! the comparison is checkable.
 
+use crate::classify::Pipe;
 use serde::Deserialize;
 use std::collections::BTreeMap;
 
@@ -25,6 +26,10 @@ pub struct Machine {
     pub dram_bw_gbps: f64,
     /// Cuda-core (non-tensor) peaks per precision key ("f16", ...).
     pub peak_tflops: BTreeMap<String, f64>,
+    /// Tensor-core peaks per precision key; absent where the part has
+    /// none (or the table predates them).
+    #[serde(default)]
+    pub tensor_peak_tflops: BTreeMap<String, f64>,
 }
 
 /// The embedded tables: (arch, TOML source).
@@ -50,10 +55,15 @@ pub fn arch_table(arch: &str) -> Option<Machine> {
 }
 
 impl Machine {
-    /// Roofline knee in flop/B for one precision: TFLOPS·1000 / GB/s
-    /// (10^12 flop/s over 10^9 B/s).
-    pub fn knee_flop_per_byte(&self, precision: &str) -> Option<f64> {
-        let peak = self.peak_tflops.get(precision)?;
+    /// Roofline knee in flop/B for one pipe and precision: TFLOPS·1000
+    /// / GB/s (10^12 flop/s over 10^9 B/s). `None` when the table has
+    /// no such peak — the SFU has none anywhere.
+    pub fn knee_flop_per_byte(&self, pipe: Pipe, precision: &str) -> Option<f64> {
+        let peak = match pipe {
+            Pipe::CudaCore => self.peak_tflops.get(precision)?,
+            Pipe::Tensor => self.tensor_peak_tflops.get(precision)?,
+            Pipe::Sfu => return None,
+        };
         Some(peak * 1000.0 / self.dram_bw_gbps)
     }
 }
@@ -80,22 +90,34 @@ mod tests {
     fn knees_match_hand_computation_from_the_cited_specs() {
         // A100: 19.5 TFLOPS / 1555 GB/s = 12.54 flop/B.
         let a100 = arch_table("sm_80").expect("sm_80");
-        let knee = a100.knee_flop_per_byte("f32").expect("f32");
+        let knee = a100.knee_flop_per_byte(Pipe::CudaCore, "f32").expect("f32");
         assert!((knee - 12.54).abs() < 0.01, "got {knee}");
         // RTX 3090: 35.58 TFLOPS / 936.2 GB/s = 38.0 flop/B.
         let ga102 = arch_table("sm_86").expect("sm_86");
-        let knee = ga102.knee_flop_per_byte("f32").expect("f32");
+        let knee = ga102
+            .knee_flop_per_byte(Pipe::CudaCore, "f32")
+            .expect("f32");
         assert!((knee - 38.0).abs() < 0.05, "got {knee}");
         // The S1 design point sits between the two: AI = 32 is
         // compute-bound on sm_80 and memory-bound on sm_86.
-        assert!(32.0 > a100.knee_flop_per_byte("f32").expect("f32"));
-        assert!(32.0 < ga102.knee_flop_per_byte("f32").expect("f32"));
-        // Missing precision is None, not zero (V100 has no bf16 row).
+        assert!(32.0 > a100.knee_flop_per_byte(Pipe::CudaCore, "f32").expect("f32"));
         assert!(
-            arch_table("sm_70")
-                .expect("sm_70")
-                .knee_flop_per_byte("bf16")
-                .is_none()
+            32.0 < ga102
+                .knee_flop_per_byte(Pipe::CudaCore, "f32")
+                .expect("f32")
         );
+        // Missing precision is None, not zero (V100 has no bf16 row).
+        let v100 = arch_table("sm_70").expect("sm_70");
+        assert!(v100.knee_flop_per_byte(Pipe::CudaCore, "bf16").is_none());
+        // A100 tensor f16: 312 TFLOPS / 1555 GB/s = 200.6 flop/B — the
+        // k14 design point (AI 64) is memory-bound there but compute-
+        // bound on cuda cores.
+        let knee = a100
+            .knee_flop_per_byte(Pipe::Tensor, "f16")
+            .expect("tensor f16");
+        assert!((knee - 200.6).abs() < 0.05, "got {knee}");
+        // No tensor f64 on GeForce parts; no SFU peak anywhere.
+        assert!(ga102.knee_flop_per_byte(Pipe::Tensor, "f64").is_none());
+        assert!(a100.knee_flop_per_byte(Pipe::Sfu, "f32").is_none());
     }
 }

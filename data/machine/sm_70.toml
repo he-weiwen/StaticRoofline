@@ -10,3 +10,10 @@ dram_bw_gbps = 900.0
 f16 = 31.4
 f32 = 15.7
 f64 = 7.8
+
+# Tensor cores. Source: NVIDIA Tesla V100 GPU Architecture whitepaper
+# (WP-08608-001), Table 1 "Comparison of NVIDIA Tesla GPUs": Peak
+# Tensor TFLOPS 125 (FP16 multiply, FP32 accumulate — the only
+# tensor-core precision on Volta). Dense; Volta has no sparsity mode.
+[tensor_peak_tflops]
+f16 = 125.0

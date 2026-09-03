@@ -11,3 +11,14 @@ f16 = 78.0
 bf16 = 39.0
 f32 = 19.5
 f64 = 9.7
+
+# Tensor cores. Source: NVIDIA A100 product page
+# (nvidia.com/en-us/data-center/a100/), Specifications, SXM: "FP64
+# Tensor Core 19.5 TFLOPS", "TF32 Tensor Core 156 TFLOPS | 312 TFLOPS*",
+# "BFLOAT16 Tensor Core 312 TFLOPS | 624 TFLOPS*", "FP16 Tensor Core
+# 312 TFLOPS | 624 TFLOPS*" (* = with sparsity). Dense figures here.
+[tensor_peak_tflops]
+f16 = 312.0
+bf16 = 312.0
+tf32 = 156.0
+f64 = 19.5

@@ -40,9 +40,14 @@ pub fn render(report: &Report) -> String {
             let _ = writeln!(w, "  hot loop: {hot}");
         }
         for v in &k.verdicts {
+            let unit = if v.pipe == "cuda-core" {
+                String::new()
+            } else {
+                format!(" {}", v.pipe)
+            };
             let _ = writeln!(
                 w,
-                "  verdict @ {} ({}, from {}): {} — loop {} AI(global) {} flop/B vs {} knee {:.1}",
+                "  verdict @ {} ({}, from {}): {} — loop {} AI(global) {} flop/B vs {}{unit} knee {:.1}",
                 v.arch,
                 v.machine,
                 v.source,

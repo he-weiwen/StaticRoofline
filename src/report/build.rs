@@ -616,24 +616,31 @@ impl<'a> KernelBuilder<'a> {
         while let Some(l) = cur {
             let agg = self.aggregates(Some(l), None);
             if let Some(ai) = agg.ai_global {
-                // Dominant flop precision: the largest constant column.
-                let precision = agg
-                    .flops
+                // Dominant flop bucket: the largest constant column of
+                // any pipe's table.
+                let tables = [
+                    (Pipe::CudaCore, &agg.flops),
+                    (Pipe::Tensor, &agg.tensor_flops),
+                    (Pipe::Sfu, &agg.sfu_flops),
+                ];
+                let (pipe, precision) = tables
                     .iter()
-                    .filter(|(k, _)| k.as_str() != "total")
-                    .filter_map(|(k, v)| v.expr.parse::<f64>().ok().map(|n| (k.clone(), n)))
-                    .max_by(|a, b| a.1.total_cmp(&b.1))
-                    .map(|(k, _)| k)
-                    .unwrap_or_else(|| "f32".to_owned());
+                    .flat_map(|(pipe, t)| t.iter().map(move |(k, v)| (*pipe, k, v)))
+                    .filter(|(_, k, _)| k.as_str() != "total")
+                    .filter_map(|(p, k, v)| v.expr.parse::<f64>().ok().map(|n| (p, k.clone(), n)))
+                    .max_by(|a, b| a.2.total_cmp(&b.2))
+                    .map(|(p, k, _)| (p, k))
+                    .unwrap_or((Pipe::CudaCore, "f32".to_owned()));
                 let mut out = Vec::new();
                 let mut missing = None;
                 for (arch, machine, source) in arches {
-                    match machine.knee_flop_per_byte(&precision) {
+                    match machine.knee_flop_per_byte(pipe, &precision) {
                         Some(knee) => out.push(Verdict {
                             arch: arch.clone(),
                             machine: machine.name.clone(),
                             source: (*source).to_owned(),
                             loop_name: self.display[l.0 as usize].clone(),
+                            pipe: pipe.key().to_owned(),
                             precision: precision.clone(),
                             ai_global: ai,
                             knee,
@@ -645,8 +652,10 @@ impl<'a> KernelBuilder<'a> {
                             .to_owned(),
                         }),
                         None => {
-                            missing =
-                                Some(format!("machine table for {arch} has no {precision} peak"));
+                            missing = Some(format!(
+                                "machine table for {arch} has no {} {precision} peak",
+                                pipe.key()
+                            ));
                         }
                     }
                 }

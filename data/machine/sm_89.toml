@@ -11,3 +11,17 @@ f16 = 82.58
 bf16 = 82.58
 f32 = 82.58
 f64 = 1.29
+
+# Tensor cores. Source: NVIDIA Ada GPU Architecture whitepaper,
+# Appendix A Table 2 "GeForce RTX 4090 vs RTX 3090 Ti vs 2080 Ti", RTX
+# 4090 column: "Peak FP16 Tensor TFLOPS with FP16 Accumulate
+# 330.3/660.6", "Peak FP16 Tensor TFLOPS with FP32 Accumulate
+# 165.2/330.4", "Peak BF16 Tensor TFLOPS with FP32 Accumulate
+# 165.2/330.4", "Peak TF32 Tensor TFLOPS 82.6/165.2" (x/y = dense/with
+# sparsity). FP32-accumulate dense figures here — the `.f32.f16.f16.f32`
+# GEMM shape; GeForce parts run FP16-accumulate at twice this rate. No
+# FP64 tensor cores on AD10x.
+[tensor_peak_tflops]
+f16 = 165.2
+bf16 = 165.2
+tf32 = 82.6
