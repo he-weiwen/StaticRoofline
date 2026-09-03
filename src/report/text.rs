@@ -201,7 +201,54 @@ fn render_flops(w: &mut String, pad: &str, label: &str, table: &BTreeMap<String,
     );
 }
 
+fn instruction_group(kind: &str) -> (u8, &'static str) {
+    let workload = [
+        "tensor ",
+        "cuda-core ",
+        "sfu ",
+        " load ",
+        " store ",
+        " copy ",
+        " atomic ",
+    ];
+    if workload
+        .iter()
+        .any(|w| kind.starts_with(w) || kind.contains(w))
+    {
+        (0, "workload")
+    } else if kind == "warp communication" {
+        (1, "warp communication")
+    } else if kind == "register move" {
+        (3, "register moves (mostly removed by ptxas)")
+    } else if kind == "hint / no-op" || kind == "unknown" {
+        (4, "other")
+    } else {
+        (2, "bookkeeping")
+    }
+}
+
+fn render_instructions(w: &mut String, pad: &str, i: &InstructionCounts) {
+    if i.total.expr == "0" {
+        return;
+    }
+    let _ = writeln!(w, "{pad}instructions = {}", count(&i.total));
+    let mut groups: BTreeMap<u8, (&str, Vec<String>)> = BTreeMap::new();
+    for (kind, n) in &i.by_kind {
+        let (order, title) = instruction_group(kind);
+        let entry = groups.entry(order).or_insert((title, Vec::new()));
+        entry.1.push(if matches!(order, 1 | 3) {
+            count(n)
+        } else {
+            format!("{kind} {}", count(n))
+        });
+    }
+    for (title, rows) in groups.values() {
+        let _ = writeln!(w, "{pad}  {title}: {}", rows.join(", "));
+    }
+}
+
 fn render_aggregates(w: &mut String, a: &Aggregates, pad: &str) {
+    render_instructions(w, pad, &a.instructions);
     render_flops(w, pad, "flops", &a.flops);
     render_flops(w, pad, "tensor flops", &a.tensor_flops);
     render_flops(w, pad, "sfu flops", &a.sfu_flops);

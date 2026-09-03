@@ -136,6 +136,34 @@ def _verify_unparsed_surfaced(report):
     return out
 
 
+def _verify_instruction_kinds_sum(report):
+    """Wherever an aggregate carries numeric instruction counts, the
+    per-kind rows sum to the total."""
+    out = []
+
+    def check(agg, where):
+        ins = agg.get("instructions")
+        if ins is None:
+            return
+        try:
+            total = int(ins["total"]["expr"])
+            parts = sum(int(v["expr"]) for v in ins["by_kind"].values())
+        except (KeyError, ValueError):
+            return
+        if total != parts:
+            out.append(f"{where}: instruction kinds sum to {parts}, total is {total}")
+
+    def walk(nodes, prefix):
+        for n in nodes:
+            check(n.get("per_iteration", {}), f"{prefix}/{n.get('name')}")
+            walk(n.get("loops", []), f"{prefix}/{n.get('name')}")
+
+    for k in report.get("kernels", []):
+        check(k.get("totals", {}), f"{k.get('name')}/totals")
+        walk(k.get("loops", []), k.get("name", "?"))
+    return out
+
+
 def _verify_classification_coverage(report):
     """coverage.instructions_classified is derived from, and must agree
     with, the per-kernel class counts."""
@@ -218,6 +246,7 @@ VERIFIER_CHECKS = [
     ("classification-coverage", _verify_classification_coverage),
     ("trip-coverage", _verify_trip_coverage),
     ("ai-consistency", _verify_ai_consistency),
+    ("instruction-kinds-sum", _verify_instruction_kinds_sum),
 ]
 
 
@@ -693,6 +722,11 @@ def self_test():
     bad["kernels"][0]["loops"][0]["per_iteration"]["ai_global"]["value"] = 2.0
     ok(any("ai-consistency" in v for v in verify_report(bad)),
        "AI-ratio violation named")
+    bad = copy.deepcopy(good)
+    bad["kernels"][0]["totals"] = {"instructions": {
+        "total": {"expr": "5"}, "by_kind": {"control": {"expr": "1"}}}}
+    ok(any("instruction-kinds-sum" in v for v in verify_report(bad)),
+       "instruction kinds not summing to the total is named")
     bad = copy.deepcopy(good)
     bad["kernels"][0]["instruction_classes"]["unparsed"] = 1
     ok(any("unparsed-surfaced" in v for v in verify_report(bad)),
