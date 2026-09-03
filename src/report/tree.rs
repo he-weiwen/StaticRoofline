@@ -215,6 +215,22 @@ pub struct Aggregates {
     /// "file:line" → workload-op copies. Empty = omitted.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub unrolled_source_lines: BTreeMap<String, u64>,
+    /// Instructions issued, in total and by kind. PTX counts, not
+    /// SASS: register moves are mostly removed by ptxas and one
+    /// `.rn` divide becomes many machine instructions.
+    pub instructions: InstructionCounts,
+}
+
+#[derive(Debug, Serialize)]
+pub struct InstructionCounts {
+    pub total: Count,
+    /// Keys are the report's kind labels: "tensor f16", "cuda-core
+    /// f32", "sfu f32", "global load 16 B", "global -> shared copy
+    /// 16 B", "global atomic 4 B", "integer arithmetic", "compare /
+    /// select", "conversion", "register move", "control",
+    /// "synchronization", "warp communication", "hint / no-op",
+    /// "unknown".
+    pub by_kind: BTreeMap<String, Count>,
 }
 
 /// A flop/byte ratio with the direction it is known in: `exact`,

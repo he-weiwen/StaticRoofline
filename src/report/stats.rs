@@ -157,6 +157,7 @@ mod tests {
                 })
                 .collect(),
             class_counts: Default::default(),
+            instructions: Default::default(),
         }
     }
 

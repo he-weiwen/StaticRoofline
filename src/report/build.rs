@@ -18,7 +18,7 @@
 use crate::cfg::loops::{LoopForest, LoopId};
 use crate::cfg::naming::{LoopName, demangle, loop_names};
 use crate::cfg::{BlockId, Cfg, build_cfg, loop_forest};
-use crate::classify::{Direction, Pipe, Precision, Space};
+use crate::classify::{ArithKind, Direction, OpClass, Pipe, Precision, Space};
 use crate::core::measurement::MeasureKind;
 use crate::core::symexpr::SymExpr;
 use crate::core::{Kernel, Module, Stmt};
@@ -246,6 +246,55 @@ impl TermSum {
     }
 }
 
+/// The report's name for an instruction class (see
+/// [`InstructionCounts::by_kind`]).
+fn instruction_kind(class: OpClass) -> String {
+    let dir = |d: Direction| match d {
+        Direction::Load => "load",
+        Direction::Store => "store",
+    };
+    let width = |b: Option<u32>| b.map_or("? B".to_owned(), |b| format!("{b} B"));
+    match class {
+        OpClass::Flop {
+            pipe, precision, ..
+        } => format!("{} {}", pipe.key(), precision.key()),
+        OpClass::Memory {
+            space,
+            direction,
+            bytes,
+        } => format!("{} {} {}", space.key(), dir(direction), width(bytes)),
+        OpClass::Copy {
+            from,
+            to,
+            written_bytes,
+            ..
+        } if from == to => format!("{} atomic {}", from.key(), width(written_bytes)),
+        OpClass::Copy {
+            from,
+            to,
+            written_bytes,
+            ..
+        } => format!(
+            "{} -> {} copy {}",
+            from.key(),
+            to.key(),
+            width(written_bytes)
+        ),
+        OpClass::NonFlopArith { kind } => match kind {
+            ArithKind::Integer => "integer arithmetic",
+            ArithKind::Predicate => "compare / select",
+            ArithKind::Conversion => "conversion",
+            ArithKind::Move => "register move",
+        }
+        .to_owned(),
+        OpClass::Sync => "synchronization".to_owned(),
+        OpClass::Communication => "warp communication".to_owned(),
+        OpClass::Control => "control".to_owned(),
+        OpClass::Ignore => "hint / no-op".to_owned(),
+        OpClass::Unknown => "unknown".to_owned(),
+    }
+}
+
 struct FlopTable {
     by_precision: BTreeMap<Precision, TermSum>,
     total: TermSum,
@@ -392,6 +441,8 @@ impl<'a> KernelBuilder<'a> {
             Pipe::ALL.iter().map(|&p| (p, FlopTable::new())).collect();
         let mut bytes: BTreeMap<&'static str, (TermSum, TermSum)> = BTreeMap::new();
         let mut conversions = TermSum::default();
+        let mut instructions: BTreeMap<String, TermSum> = BTreeMap::new();
+        let mut instruction_total = TermSum::default();
         for s in ["global", "shared", "local"] {
             bytes.insert(s, Default::default());
         }
@@ -413,6 +464,18 @@ impl<'a> KernelBuilder<'a> {
             for &l in &chain[..cut] {
                 mult = SymExpr::mul(mult, self.trip_exprs[l.0 as usize].clone());
                 chain_at_most |= self.cond_entry[l.0 as usize];
+            }
+            let block_at_most = bm.qualifier == CountQualifier::AtMost
+                || chain_at_most
+                || cta.is_some_and(|c| !c.exact);
+            let threads = cta.map_or(1, |c| c.threads as i64);
+            for (&class, &n) in &bm.instructions {
+                let n = n as i64 * threads;
+                instructions
+                    .entry(instruction_kind(class))
+                    .or_default()
+                    .add(n, &mult, block_at_most);
+                instruction_total.add(n, &mult, block_at_most);
             }
             for m in &bm.measurements {
                 let at_most = bm.qualifier == CountQualifier::AtMost
@@ -492,6 +555,13 @@ impl<'a> KernelBuilder<'a> {
             conversions: conversions.count(),
             ai_global,
             unrolled_source_lines: self.unrolled_lines(below),
+            instructions: InstructionCounts {
+                total: instruction_total.count(),
+                by_kind: instructions
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.count()))
+                    .collect(),
+            },
         }
     }
 

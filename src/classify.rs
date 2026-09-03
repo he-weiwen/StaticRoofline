@@ -110,7 +110,7 @@ impl Space {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Direction {
     Load,
     Store,
@@ -118,7 +118,7 @@ pub enum Direction {
 
 /// Non-flop arithmetic, split because conversions are first-class in a
 /// precision audit (S8: 8 `cvt` per k2 main-loop iteration).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum ArithKind {
     /// `cvt` — precision/width conversion.
     Conversion,
@@ -130,7 +130,7 @@ pub enum ArithKind {
     Move,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum OpClass {
     /// Cuda-core floating-point work. `flops` already includes the
     /// base convention and packed lanes.
