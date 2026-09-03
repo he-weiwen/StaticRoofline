@@ -1,14 +1,15 @@
 //! Instruction → semantic record (PLAN.md §6, PR 08).
 //!
 //! Transcribed from v1's `lib/PTX/Classifier.cpp` (v1 lives only in
-//! git history now, last at 690d81d) and narrowed to what the Phase 1
-//! corpus contains: cuda-core flops, non-flop arithmetic
-//! (conversions counted separately — they are the precision-audit
-//! overhead S8 reports), memory, sync, control, ignore, unknown. The
-//! Phase 2 families (tensor/wmma, cp.async, atomics, SFU
-//! transcendentals, tex/surf) classify as `Unknown` until their item
-//! lands: visible, counted, and policed by the corpus coverage check —
-//! never silently zero.
+//! git history now, last at 690d81d): cuda-core, tensor-core and SFU
+//! flops, non-flop arithmetic (conversions counted separately — they
+//! are the precision-audit overhead S8 reports), memory, copies that
+//! read one space and write another, sync, control, ignore, unknown.
+//! What has no arm (Hopper bulk copies and warpgroup MMA, integer and
+//! sparse MMA kinds, textures) classifies as `Unknown`: visible,
+//! counted, and policed by the corpus coverage check — never silently
+//! zero. `docs/ptx-instruction-coverage.md` walks the ISA chapter row
+//! by row.
 //!
 //! Two deliberate divergences from the v1 reference, both documented
 //! at the match arm:

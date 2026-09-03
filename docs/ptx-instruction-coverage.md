@@ -70,8 +70,8 @@ Two invariants police coverage: the verifier identity
 `classified + allowlisted-unknown = total` and the corpus coverage
 check (every fixture instruction classifies non-Unknown or is
 allowlisted; the allowlist is empty). The committed corpus exercises
-18 base mnemonics, all classified: `mov fma ld add mul st shl and
-setp bra or mad cvta ret shr cvt bar sub`.
+22 base mnemonics, all classified: `mov fma ld add mul st shl and
+setp bra or mad cvta ret shr cvt bar sub wmma mma ldmatrix cp`.
 
 Row verdict vocabulary: **OK** (correct as-is), **OK (deferred)**
 (deliberately `Unknown` pending a Phase 2 family, with its tier),
@@ -591,7 +591,7 @@ corrupt AI, not just clutter the unknown list); (b) does the target
 audience — GEMM / conv / stencil / attention from nvcc, clang,
 Triton — actually emit it; (c) how soon.
 
-### Tier 1 — blocks the core audience today (the existing Phase 2 instruction-families item)
+### Tier 1 — blocks the core audience today (the existing Phase 2 instruction-families item) — **landed** (PLAN.md §6, PRs 17–29); kept as the record of what was asked for
 
 Any tensor-core or reduction kernel on sm_80/sm_89 — including
 everything Triton emits for these targets — hits these. All carry

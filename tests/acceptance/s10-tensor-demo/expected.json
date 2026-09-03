@@ -1,0 +1,35 @@
+{
+  "kernels": [
+    {
+      "name": "_Z18gemm_wmma_16x16x16PK6__halfS1_Pf",
+      "instruction_classes": {"unknown": 0, "unparsed": 0},
+      "totals": {
+        "flops": {"total": {"expr": "0", "at_most": false}},
+        "tensor_flops": {
+          "total": {"expr": "256", "at_most": false},
+          "f16": {"expr": "256", "at_most": false}
+        },
+        "bytes": {"global": {"load": {"expr": "32", "at_most": false},
+                             "store": {"expr": "32", "at_most": false}}},
+        "ai_global": 4.0
+      },
+      "unknowns": []
+    },
+    {
+      "name": "_Z16gemm_mma_16x8x16PK6__halfS1_Pf",
+      "instruction_classes": {"unknown": 0, "unparsed": 0},
+      "totals": {
+        "flops": {"total": {"expr": "0", "at_most": false}},
+        "tensor_flops": {
+          "total": {"expr": "128", "at_most": false},
+          "f16": {"expr": "128", "at_most": false}
+        },
+        "bytes": {"global": {"load": {"expr": "24", "at_most": false},
+                             "store": {"expr": "16", "at_most": false}}},
+        "ai_global": 3.2
+      },
+      "unknowns": []
+    }
+  ],
+  "coverage": {"instructions_classified": {"num": 49, "den": 49}}
+}

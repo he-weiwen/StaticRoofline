@@ -67,6 +67,16 @@ id = "S9.3"
 case = "s9-no-loc"
 status = "pass"
 
+[[scenario]]
+id = "S10.1"
+case = "s10-tensor-demo"
+status = "pass"
+
+[[scenario]]
+id = "S10.2"
+case = "s10-tensor-tiled"
+status = "pass"
+
 [[min_coverage]]
 metric = "instructions_classified"
 percent = 100.0
@@ -74,5 +84,5 @@ enforced = true
 
 [[min_coverage]]
 metric = "loop_trips_resolved"
-percent = 94.12
+percent = 94.74
 enforced = true

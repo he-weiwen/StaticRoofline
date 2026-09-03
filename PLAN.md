@@ -351,6 +351,7 @@ S1.2 (the sm_89 fan-out) follows in PR 14.
 | S7.1 / S7.2 | Did tiling pay off? | `k1`, `k5` | two independent runs, no `diff` verb: AI(k1 main loop) = 0.5 flop/B vs AI(k5 tile loop) = 32 flop/B, both shape-independent (no `--bind`) — the contrast is two comparable numbers. (0.5, not the 0.25 the design table first guessed: 8 flops / 16 B per unrolled iteration under the same fma=2 convention that makes k5 = 32.) | PR 12 |
 | S8 | Am I on the precision path I think? | `k2` | flop table: f32 cuda-core only, **0 f16 flops** despite `__half` data (compute is converted to f32); 8 `cvt` per main-loop iteration counted as conversion overhead; 2 B loads ×8/iter; one guarded 2 B store in the epilogue (`at_most` — the bounds guard makes kernel totals upper bounds) | PR 12 |
 | S9.1 / S9.2 / S9.3 | Does the tool admit what it can't see? | `micro/data_dep`, `micro/branchy`, `micro/no_loc` | data-dependent latch → trips = *named* unknown with reason, totals stay symbolic (never silent zero), trip-coverage stat visibly < 100%; in-loop conditional → `≤` markers propagate to every aggregate; no `.loc` → loops named by label, report complete; exit 0 in all three (unknowns are results, not errors) | PR 12 |
+| S10.1 / S10.2 | Is my tensor-core work visible, and only the work? | `mma_demo` (two loop-free 16×16×16 products: wmma API, inline `mma.sync`) + `k14` (= `tests/fixtures/src/14_ldmatrix_mma.cuh`, BM=BN=128 BK=16, `ldmatrix` + `mma.sync` + `cp.async` double buffer) sm_80 PTX | S10.1: per-lane tensor flops exactly 256 and 128 (2·M·N·K / 32), cuda-core flops 0 (v1's 8192-phantom-flops-per-`wmma.load` bug at report level), 32/32 and 24/16 global bytes; S10.2: main loop trips `K / 16` (nvcc's signed-divide sequence, IV incremented through an intermediate register), 4096 tensor flops per lane per iteration against 64 `cp.async` global bytes (`≤`: the prefetch is guarded), 128 B of `ldmatrix` shared reads, AI 64 — memory-bound on the A100 table against the f16 tensor knee 200.6, no unknowns | PRs 17–29 (the tensor item) |
 
 **Phase 2 — each lands with, and is the acceptance test of, its
 backlog item; "matters when" is that item's trigger.** Fully designed,
@@ -801,6 +802,50 @@ the §2 flat-IR ground rule, no behavior change)
   by a tensor-core demo kernel that failed to parse.
 - Done when: `ci.sh` green with no expected-output change.
 
+**PRs 17–29 — Tensor-core / async / atomic / SFU instruction
+families** (the first Phase 2 item, triggered by a wmma/mma demo
+kernel that reported 0 flops; landed as thirteen commits of ≤ 50
+LOC each, every ISA claim cited from the manual by section)
+- Parser: `|`-separated destination operands (`setp p|q`,
+  `elect.sync d|p`). Report: statements the parser cannot read are
+  counted (`instruction_classes.unparsed`) and listed as an unknown,
+  with a runner identity — the audit's one contract gap.
+- Measurement: the `Scope` axis is gone. Every count is per thread;
+  warp-collective work is the warp total over the 32 lanes
+  (ISA §4.5.1 `WARP_SZ`), which divides exactly for every wmma, mma
+  and ldmatrix shape × type. A per-warp count would have summed 32×
+  wrong exactly where the verdict lives (per-iteration aggregates
+  carry no thread count).
+- Flops carry a `Pipe` (cuda-core / tensor / sfu): three flop tables
+  in `Aggregates` (`flops`, `tensor_flops`, `sfu_flops`, same keys,
+  `tf32` added), AI(global) over all three, the verdict picks the
+  dominant (pipe, precision) bucket and its knee from
+  `[tensor_peak_tflops]` (dense figures, cited per table: V100 125,
+  T4 65, A100 312/312/156/19.5, RTX 3090 71/71/35.6, RTX 4090
+  165.2/165.2/82.6 at FP32 accumulate, H100 989.5/989.5/494.5/67).
+  The SFU has no peak: an SFU-dominated loop names the missing knee.
+- Arms: `wmma` split by role (load/store = fragment bytes, mma =
+  2·M·N·K); `mma.sync` (m8n8k4 f16 = 4 MMAs per §9.7.15.5.1); FP
+  kinds only — integer, b1, fp8/fp6/fp4, `.sp` and `.block_scale`
+  stay `Unknown` (misfit §D); `ldmatrix`/`stmatrix`; `cp.async` as
+  the new `Copy` class (one memory instruction, a global-read and a
+  shared-write measurement; `src-size` honored), its group/mbarrier
+  bookkeeping as `Sync`, bulk/tensor forms still `Unknown`; the SFU
+  family at one flop per result on the `sfu` pipe, integer `div`
+  freed; `atom` = `Copy` in place, `red` = store (misfit §A policy 2);
+  the audit's Tier 3 one-liners; `ldg` deleted.
+- Trip shapes (extends PR 11's catalog): `shr` by a constant is floor
+  division, a signed sign-bit shift is 0 in the nonnegative domain
+  (nvcc's `n / 16`); an induction variable may be incremented through
+  another single-definition register (`t = i + 2; i = t - 1`).
+- Fixtures: k11, k12, k14 (sm_80 only — sm_90 output is byte-identical
+  apart from `.target`), mma_demo; all in both invariant suites.
+  ★S10.1/S10.2; `loop_trips_resolved` minimum raised to 94.74%.
+- Not done, and why: `wgmma`/TMA/`tcgen05` (Tier 2, wait for the scope
+  axis and an sm_90+ fixture); integer/sparse/block-scaled MMA and
+  fp8 (a counting convention to choose with a fixture and an NCU
+  cross-check); `movmatrix`.
+
 ### Phase 2 — the demand-driven backlog
 
 Nothing here is scheduled. An item starts only when its trigger fires;
@@ -810,7 +855,9 @@ verified facts from the planning sessions are kept with each item so
 the work starts warm — but no code, fixture, or CLI surface for any of
 them exists in the tree until then.
 
-**Tensor-core / async / atomic / SFU instruction families** (extends
+**Tensor-core / async / atomic / SFU instruction families** — **landed
+as PRs 17–29** (see §6); the paragraph below is the design as it
+stood when the trigger fired, kept for the record. (extends
 PR 08; brings fixtures `k11`, `k12`, `k14` at sm_80/sm_90). Trigger:
 the first tensor-core or async-pipeline kernel analyzed. OpClass arms
 for tensor ops with `wmma` **role split by first modifier**
@@ -1011,9 +1058,10 @@ Phase 1:
 - [x] PR 14 — sm_89 fixtures (k1/k5) ★S1.2 + NCU validation on the local RTX 4090
 - [x] PR 15 — static shared memory per CTA (★S7.1/S7.2 assertions + `ptxas -v` cross-check)
 - [x] PR 16 — typed index arenas (`IndexVec`/`IdxRange`) + module-scope `.shared` decls
+- [x] PRs 17–29 — tensor-core / async / atomic / SFU families ★S10 (the first Phase 2 item)
 
 Phase 2 (backlog — tick when triggered and executed):
-- [ ] tensor/async/atomic/SFU families (+ k11/k12/k14 fixtures)
+- [x] tensor/async/atomic/SFU families (+ k11/k12/k14/mma_demo fixtures) ★S10 — PRs 17–29
 - [ ] Triton + clang producers
 - [ ] `diff` + SASS sidecar ★S2
 - [ ] affine + coalescing ★S3 ★S4

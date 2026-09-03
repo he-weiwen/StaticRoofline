@@ -74,9 +74,23 @@ ceiling is real again. The demand side is this tool's half of the
 story; what the memory hierarchy does with the demand is Nsight
 Compute's.
 
+Flops are reported in three tables by the unit that runs them: `flops`
+(CUDA cores), `tensor flops` (`wmma.mma`, `mma.sync`) and `sfu flops`
+(`ex2`, `rsqrt`, `div.rn`, ... — one flop per result). AI(global)
+counts all three; the verdict compares against the peak of whichever
+bucket dominates, so a tensor-core GEMM is judged against the part's
+tensor peak ("vs f16 tensor knee 200.6"), and every count is per
+thread — a warp-collective instruction contributes its warp total
+divided by the 32 lanes. `cp.async` is recorded on both sides, a global
+read and a shared write. Every peak in `data/machine/*.toml` cites the
+NVIDIA document it came from.
+
 Counts marked `<=` are upper bounds (code behind data-dependent or
 bounds-check branches). Whatever the tool cannot derive it reports as a
 *named unknown* with a reason — an unknown is a result, not an error.
+That includes statements the parser cannot read, integer, sparse and
+block-scaled MMA kinds, and the Hopper bulk/TMA copies, which are
+counted by name rather than guessed.
 
 ## Audience boundary
 
