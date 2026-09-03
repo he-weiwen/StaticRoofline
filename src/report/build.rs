@@ -392,7 +392,7 @@ impl<'a> KernelBuilder<'a> {
                     bm.qualifier == CountQualifier::AtMost || m.predicated || chain_at_most;
                 let n = m.count as i64 * cta_threads.map_or(1, |t| t as i64);
                 match m.kind {
-                    MeasureKind::Flops { precision } => {
+                    MeasureKind::Flops { precision, .. } => {
                         flops
                             .get_mut(precision.key())
                             .expect("all precisions pre-inserted")

@@ -29,17 +29,51 @@ use crate::core::{Instr, Module};
 pub enum Precision {
     F16,
     BF16,
+    /// Tensor-core only (PTX ISA §9.7.15.2): 32-bit storage, 10-bit
+    /// mantissa.
+    TF32,
     F32,
     F64,
 }
 
 impl Precision {
+    pub const ALL: [Precision; 5] = [
+        Precision::F16,
+        Precision::BF16,
+        Precision::TF32,
+        Precision::F32,
+        Precision::F64,
+    ];
+
     pub fn key(self) -> &'static str {
         match self {
             Precision::F16 => "f16",
             Precision::BF16 => "bf16",
+            Precision::TF32 => "tf32",
             Precision::F32 => "f32",
             Precision::F64 => "f64",
+        }
+    }
+}
+
+/// The execution unit a flop runs on; each has its own peak in the
+/// machine tables, so each gets its own flop table in the report.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum Pipe {
+    CudaCore,
+    Tensor,
+    /// Special function unit: transcendentals, reciprocals, roots.
+    Sfu,
+}
+
+impl Pipe {
+    pub const ALL: [Pipe; 3] = [Pipe::CudaCore, Pipe::Tensor, Pipe::Sfu];
+
+    pub fn key(self) -> &'static str {
+        match self {
+            Pipe::CudaCore => "cuda-core",
+            Pipe::Tensor => "tensor",
+            Pipe::Sfu => "sfu",
         }
     }
 }
@@ -99,6 +133,7 @@ pub enum OpClass {
     /// Cuda-core floating-point work. `flops` already includes the
     /// base convention and packed lanes.
     Flop {
+        pipe: Pipe,
         precision: Precision,
         flops: u32,
     },
@@ -137,6 +172,7 @@ pub fn classify(module: &Module, instr: &Instr) -> OpClass {
         // -- cuda-core flops (FP type modifier required) -----------------
         "fma" | "mad" => match fp {
             Some((p, lanes)) => OpClass::Flop {
+                pipe: Pipe::CudaCore,
                 precision: p,
                 flops: 2 * lanes,
             },
@@ -148,6 +184,7 @@ pub fn classify(module: &Module, instr: &Instr) -> OpClass {
         },
         "add" | "sub" | "mul" | "min" | "max" | "abs" | "neg" | "copysign" => match fp {
             Some((p, lanes)) => OpClass::Flop {
+                pipe: Pipe::CudaCore,
                 precision: p,
                 flops: lanes,
             },
@@ -315,6 +352,7 @@ mod tests {
         assert_eq!(
             class_of("fma.rn.f32 %f1, %f2, %f3, %f4;"),
             OpClass::Flop {
+                pipe: Pipe::CudaCore,
                 precision: Precision::F32,
                 flops: 2
             }
@@ -322,6 +360,7 @@ mod tests {
         assert_eq!(
             class_of("fma.rn.f16x2 %r1, %r2, %r3, %r4;"),
             OpClass::Flop {
+                pipe: Pipe::CudaCore,
                 precision: Precision::F16,
                 flops: 4
             }
@@ -329,6 +368,7 @@ mod tests {
         assert_eq!(
             class_of("add.f32 %f1, %f2, %f3;"),
             OpClass::Flop {
+                pipe: Pipe::CudaCore,
                 precision: Precision::F32,
                 flops: 1
             }
@@ -336,6 +376,7 @@ mod tests {
         assert_eq!(
             class_of("mul.bf16x2 %r1, %r2, %r3;"),
             OpClass::Flop {
+                pipe: Pipe::CudaCore,
                 precision: Precision::BF16,
                 flops: 2
             }
@@ -343,6 +384,7 @@ mod tests {
         assert_eq!(
             class_of("max.f64 %fd1, %fd2, %fd3;"),
             OpClass::Flop {
+                pipe: Pipe::CudaCore,
                 precision: Precision::F64,
                 flops: 1
             }

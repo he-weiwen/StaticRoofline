@@ -102,9 +102,13 @@ pub fn collect(
                     });
                 };
                 match classify(module, instr) {
-                    OpClass::Flop { precision, flops } => {
+                    OpClass::Flop {
+                        pipe,
+                        precision,
+                        flops,
+                    } => {
                         counts.flop += 1;
-                        push(MeasureKind::Flops { precision }, flops as u64);
+                        push(MeasureKind::Flops { pipe, precision }, flops as u64);
                     }
                     OpClass::NonFlopArith { kind } => {
                         counts.non_flop_arith += 1;

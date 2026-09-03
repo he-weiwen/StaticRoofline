@@ -16,11 +16,12 @@
 //! class is unrepresentable.
 
 use super::intern::Symbol;
-use crate::classify::{ArithKind, Direction, Precision, Space};
+use crate::classify::{ArithKind, Direction, Pipe, Precision, Space};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MeasureKind {
     Flops {
+        pipe: Pipe,
         precision: Precision,
     },
     Bytes {

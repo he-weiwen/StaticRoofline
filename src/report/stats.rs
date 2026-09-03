@@ -73,7 +73,7 @@ impl<'a> Stats<'a> {
     /// Flop total over `blocks`, optionally restricted to one precision.
     pub fn flops(&self, blocks: &[BlockId], precision: Option<Precision>) -> Tally {
         self.tally(blocks, |k| match k {
-            MeasureKind::Flops { precision: p } => precision.is_none_or(|want| *p == want),
+            MeasureKind::Flops { precision: p, .. } => precision.is_none_or(|want| *p == want),
             _ => false,
         })
     }
@@ -136,6 +136,7 @@ impl<'a> Stats<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::classify::Pipe;
     use crate::core::measurement::Measurement;
 
     fn block(
@@ -168,6 +169,7 @@ mod tests {
                 vec![
                     (
                         Flops {
+                            pipe: Pipe::CudaCore,
                             precision: Precision::F32,
                         },
                         8,
@@ -198,6 +200,7 @@ mod tests {
                 vec![
                     (
                         Flops {
+                            pipe: Pipe::CudaCore,
                             precision: Precision::F32,
                         },
                         2,
@@ -205,6 +208,7 @@ mod tests {
                     ),
                     (
                         Flops {
+                            pipe: Pipe::CudaCore,
                             precision: Precision::F16,
                         },
                         4,
