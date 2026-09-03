@@ -227,15 +227,20 @@ pub fn classify(module: &Module, instr: &Instr) -> OpClass {
         "cvt" => OpClass::NonFlopArith {
             kind: ArithKind::Conversion,
         },
-        "mov" | "cvta" => OpClass::NonFlopArith {
-            kind: ArithKind::Move,
-        },
-        "setp" | "selp" | "set" | "slct" | "testp" | "isspacep" => OpClass::NonFlopArith {
-            kind: ArithKind::Predicate,
-        },
-        "and" | "or" | "xor" | "not" | "shl" | "shr" | "lop3" | "bfe" | "bfi" | "brev" | "popc"
-        | "clz" | "bfind" | "bmsk" | "szext" | "prmt" | "rem" | "sad" | "dp4a" | "dp2a"
-        | "mul24" | "mad24" => {
+        "mov" | "cvta" | "mapa" | "stacksave" | "stackrestore" | "alloca" => {
+            OpClass::NonFlopArith {
+                kind: ArithKind::Move,
+            }
+        }
+        "setp" | "selp" | "set" | "slct" | "testp" | "isspacep" | "istypep" => {
+            OpClass::NonFlopArith {
+                kind: ArithKind::Predicate,
+            }
+        }
+        "and" | "or" | "xor" | "not" | "shl" | "shr" | "shf" | "lop3" | "bfe" | "bfi" | "brev"
+        | "popc" | "clz" | "bfind" | "bmsk" | "szext" | "prmt" | "rem" | "sad" | "dp4a"
+        | "dp2a" | "mul24" | "mad24" | "addc" | "subc" | "madc" | "cnot" | "fns" | "clmad"
+        | "getctarank" => {
             if mods.contains(&"pred") {
                 OpClass::NonFlopArith {
                     kind: ArithKind::Predicate,
@@ -260,9 +265,8 @@ pub fn classify(module: &Module, instr: &Instr) -> OpClass {
                 bytes: bytes_of(&mods),
             }
         }
-        // Read-only / uniform global loads (v1 rule: count as global
-        // loads when a width is present).
-        "ldu" | "ldg" => OpClass::Memory {
+        // Uniform global loads (PTX ISA §9.7.9.9).
+        "ldu" => OpClass::Memory {
             space: Space::Global,
             direction: Direction::Load,
             bytes: bytes_of(&mods),
@@ -293,15 +297,14 @@ pub fn classify(module: &Module, instr: &Instr) -> OpClass {
 
         // -- sync / warp collectives ---------------------------------------
         "bar" | "barrier" | "mbarrier" | "membar" | "fence" => OpClass::Sync,
-        "shfl" | "vote" | "match" | "activemask" | "redux" => OpClass::Sync,
+        "shfl" | "vote" | "match" | "activemask" | "redux" | "elect" => OpClass::Sync,
 
         // -- control -----------------------------------------------------------
         "bra" | "brx" | "ret" | "exit" | "call" | "trap" | "brkpt" => OpClass::Control,
 
         // -- correctly ignored -------------------------------------------------
-        "nop" | "prefetch" | "prefetchu" | "discard" | "applypriority" | "griddepcontrol" => {
-            OpClass::Ignore
-        }
+        "nop" | "prefetch" | "prefetchu" | "discard" | "applypriority" | "griddepcontrol"
+        | "createpolicy" | "nanosleep" | "pmevent" | "setmaxnreg" => OpClass::Ignore,
 
         // -- everything else: Phase 2 families and genuine novelty ------
         // (tensor/wmma/mma/ldmatrix, cp.async, atom/red, SFU
@@ -756,14 +759,53 @@ mod tests {
                 bytes: Some(16)
             }
         );
+    }
+
+    #[test]
+    fn hopper_and_extended_precision_bookkeeping_have_arms() {
+        let integer = OpClass::NonFlopArith {
+            kind: ArithKind::Integer,
+        };
+        for text in [
+            "addc.cc.u32 %r1, %r2, %r3;",
+            "subc.u32 %r1, %r2, %r3;",
+            "madc.hi.cc.u32 %r1, %r2, %r3, %r4;",
+            "shf.l.wrap.b32 %r1, %r2, %r3, %r4;",
+            "cnot.b32 %r1, %r2;",
+            "fns.b32 %r1, %r2, %r3, %r4;",
+            "clmad.lo.u64 %rd1, %rd2, %rd3, %rd4;",
+            "getctarank.shared::cluster.u32 %r1, %r2;",
+        ] {
+            assert_eq!(class_of(text), integer, "{text}");
+        }
         assert_eq!(
-            class_of("ldg.global.f32 %f1, [%rd1];"),
-            OpClass::Memory {
-                space: Space::Global,
-                direction: Direction::Load,
-                bytes: Some(4)
+            class_of("istypep.texref %p1, %rd1;"),
+            OpClass::NonFlopArith {
+                kind: ArithKind::Predicate
             }
         );
+        for text in [
+            "mapa.shared::cluster.u32 %r1, %r2, %r3;",
+            "stacksave.u64 %rd1;",
+            "alloca.u64 %rd1, %rd2, 16;",
+        ] {
+            assert_eq!(
+                class_of(text),
+                OpClass::NonFlopArith {
+                    kind: ArithKind::Move
+                },
+                "{text}"
+            );
+        }
+        assert_eq!(class_of("elect.sync %r1|%p1, %r2;"), OpClass::Sync);
+        for text in [
+            "createpolicy.fractional.L2::evict_last.b64 %rd1, 0.25;",
+            "nanosleep.u32 100;",
+            "pmevent 3;",
+            "setmaxnreg.inc.sync.aligned.u32 232;",
+        ] {
+            assert_eq!(class_of(text), OpClass::Ignore, "{text}");
+        }
     }
 
     #[test]

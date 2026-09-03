@@ -89,7 +89,7 @@ decision, not just an arm).
 | 9.7.1.2 | `sub` | `Integer` (same mechanism) | OK. |
 | 9.7.1.3 | `mul` | `Integer` (incl. `.hi/.lo/.wide`) | OK. |
 | 9.7.1.4 | `mad` | `Integer` | OK — deliberate divergence from v1, which gave integer `mad` 2 flops of precision "Other"; documented and regression-tested. |
-| 9.7.1.5 | `clmad` | `Unknown` | Gap (harmless) — carry-less multiply-add, crypto/CRC niche. Recommend `Integer` (Tier 3). |
+| 9.7.1.5 | `clmad` | `Integer` | OK — carry-less multiply-add. |
 | 9.7.1.6 | `mul24` | `Integer` | OK. |
 | 9.7.1.7 | `mad24` | `Integer` | OK. |
 | 9.7.1.8 | `sad` | `Integer` | OK. |
@@ -102,7 +102,7 @@ decision, not just an arm).
 | 9.7.1.15 | `popc` | `Integer` | OK. |
 | 9.7.1.16 | `clz` | `Integer` | OK. |
 | 9.7.1.17 | `bfind` | `Integer` | OK. |
-| 9.7.1.18 | `fns` | `Unknown` | Gap (harmless) — find-nth-set-bit, rarely emitted. Recommend `Integer` (Tier 3). |
+| 9.7.1.18 | `fns` | `Integer` | OK. |
 | 9.7.1.19 | `brev` | `Integer` | OK. |
 | 9.7.1.20 | `bfe` | `Integer` | OK. |
 | 9.7.1.21 | `bfi` | `Integer` | OK. |
@@ -116,11 +116,11 @@ decision, not just an arm).
 | § | Instruction | Today | Verdict & recommendation |
 |---|---|---|---|
 | 9.7.2.1 | `add.cc` | `Integer` (mnemonic `add` + `cc` modifier — incidental but correct routing) | OK. |
-| 9.7.2.2 | `addc` | `Unknown` (distinct mnemonic, no arm) | **Wart** — half of every carry chain classifies (`add.cc`), half doesn't. Recommend `Integer` (Tier 3); appears in `__int128`/wide-multiply code. |
+| 9.7.2.2 | `addc` | `Integer` | OK — both halves of a carry chain now classify; the former wart. |
 | 9.7.2.3 | `sub.cc` | `Integer` (via `sub`) | OK. |
-| 9.7.2.4 | `subc` | `Unknown` | Same wart as `addc`. Recommend `Integer` (Tier 3). |
+| 9.7.2.4 | `subc` | `Integer` | OK. |
 | 9.7.2.5 | `mad.cc` | `Integer` (via `mad`) | OK. |
-| 9.7.2.6 | `madc` | `Unknown` | Same wart. Recommend `Integer` (Tier 3). |
+| 9.7.2.6 | `madc` | `Integer` | OK. |
 
 ## §9.7.3 Floating-Point Instructions
 
@@ -196,9 +196,9 @@ decision, not just an arm).
 | 9.7.8.2 | `or` | Same | OK. |
 | 9.7.8.3 | `xor` | Same | OK. |
 | 9.7.8.4 | `not` | Same | OK. |
-| 9.7.8.5 | `cnot` | `Unknown` | Gap (harmless) — C-style boolean not; rarely emitted. Recommend `Integer` (Tier 3). |
+| 9.7.8.5 | `cnot` | `Integer` | OK. |
 | 9.7.8.6 | `lop3` | `Integer` | OK. |
-| 9.7.8.7 | `shf` | `Unknown` (verified) | **Gap worth closing** — funnel shift; nvcc emits `shf.l/.r` for 64-bit shifts and rotates (hashing, PRNG, bit-packing). Recommend `Integer` (Tier 3, the likeliest of the missing integer ops to appear first). |
+| 9.7.8.7 | `shf` | `Integer` | OK — funnel shift, nvcc's 64-bit shift lowering. |
 | 9.7.8.8 | `shl` | `Integer` | OK. |
 | 9.7.8.9 | `shr` | `Integer` | OK. |
 
@@ -232,13 +232,13 @@ requested.
 | 9.7.9.16 | `prefetchu` | `Ignore` | OK — same. |
 | 9.7.9.17 | `applypriority` | `Ignore` | OK — cache-state hint. |
 | 9.7.9.18 | `discard` | `Ignore` | OK — invalidates lines without writeback; no data movement. |
-| 9.7.9.19 | `createpolicy` | `Unknown` | Gap (harmless) — register-only construction of a cache-policy descriptor. Recommend `Ignore` (Tier 3). |
+| 9.7.9.19 | `createpolicy` | `Ignore` | OK — builds a cache-policy register, touches no memory. |
 | 9.7.9.20 | `isspacep` | `Predicate` | OK. |
 | 9.7.9.21 | `cvta` | `Move` | OK — address-space cast, not a value conversion; tested. |
 | 9.7.9.22 | `cvt` | `Conversion` | OK — and future-proof: every format including FP8/FP6/FP4 (`e4m3`, `e5m2`, `e2m1`, …) lands here with no per-format code. Conversions as their own kind is load-bearing for the S8 precision audit (8 `cvt` per k2 main-loop iteration). |
 | 9.7.9.23 | `cvt.pack` | `Conversion` (mnemonic `cvt` + `pack` modifier) | OK. |
-| 9.7.9.24 | `mapa` | `Unknown` | Gap (harmless) — maps an address to a peer CTA's shared memory. Recommend `Move` (Tier 3, with cluster support). |
-| 9.7.9.25 | `getctarank` | `Unknown` | Gap (harmless) — recommend `Integer` (Tier 3). |
+| 9.7.9.24 | `mapa` | `Move` | OK — an address computation into a peer CTA's shared memory; the access it feeds is counted where it happens. |
+| 9.7.9.25 | `getctarank` | `Integer` | OK. |
 
 ### §9.7.9.26 Asynchronous copy
 
@@ -288,7 +288,7 @@ transfers are a different roofline with different machine tables
 | 9.7.11.3 | `tex` | `Unknown` (verified) | OK (deferred, Tier 4) — an *improvement* over v1, which `Ignore`d it: a texture fetch moves real bytes, so silently zeroing corrupted AI. ⚠ misfit §F: footprint is coordinate-dependent and the fetch includes fixed-function filtering arithmetic — neither plain bytes nor flops. `Unknown` is the honest state for an out-of-audience family. |
 | 9.7.11.4 | `tld4` | `Unknown` | OK (deferred, Tier 4) — same reasoning. |
 | 9.7.11.5 | `txq` | `Unknown` | OK (deferred, Tier 4) — a metadata query; target `Ignore` if the family is ever handled. |
-| 9.7.11.6 | `istypep` | `Unknown` | Gap (harmless) — a predicate query that happens to live in the texture section. Recommend `Predicate` (Tier 3 one-liner). |
+| 9.7.11.6 | `istypep` | `Predicate` | OK — a predicate query that lives in the texture chapter. |
 
 ## §9.7.12 Surface Instructions
 
@@ -331,7 +331,7 @@ transfers are a different roofline with different machine tables
 | 9.7.14.12 | `activemask` | `Sync` | OK. |
 | 9.7.14.13 | `redux.sync` | `Sync` | OK, with a flag: ⚠ misfit §A (mild) — it computes a warp-wide arithmetic reduction (integer ops; `f32` min/max on newer targets), which vanishes into `Sync`. Consistent with the convention (min/max would be 1 flop per *warp*, negligible), but the decision should be stated when the SFU/pipe axis lands. |
 | 9.7.14.14 | `griddepcontrol` | `Ignore` | OK — defensible; arguably `Sync` (it orders dependent grids), but nothing downstream distinguishes them. Cosmetic; keep. |
-| 9.7.14.15 | `elect.sync` | **parser-level `Unparsed`** (the `d|p` destination doesn't parse; verified) — would be `Unknown` even if parsed | **Gap worth closing** — warp-specialized Hopper kernels (CUTLASS, Triton) emit it routinely, and today it vanishes from the report entirely (the silent-skip hole). Recommend: `d|p` operand form in the parser + one-line `Sync` arm (Tier 2). |
+| 9.7.14.15 | `elect.sync` | `Sync` (the `d|p` destination parses since the `|` operand change) | OK — warp-collective leader election. |
 | 9.7.14.16.12 | `mbarrier.init` | `Sync` (via `mbarrier`) | OK — technically writes 8 bytes of shared memory to initialize the object; negligible by construction, `Sync` is right. |
 | 9.7.14.16.13 | `mbarrier.inval` | `Sync` | OK. |
 | 9.7.14.16.14 | `mbarrier.expect_tx` | `Sync` | OK. |
@@ -410,9 +410,9 @@ wildly wrong.
 
 | § | Instruction | Today | Verdict & recommendation |
 |---|---|---|---|
-| 9.7.18.1 | `stacksave` | `Unknown` | Gap (harmless) — recommend `Move` (Tier 3). Rare in performance kernels. |
-| 9.7.18.2 | `stackrestore` | `Unknown` | Gap (harmless) — recommend `Move` (Tier 3). |
-| 9.7.18.3 | `alloca` | `Unknown` | Gap (harmless) — recommend `Move` (Tier 3). Note: it creates a runtime-sized local-memory footprint, but the traffic that matters still appears as `ld.local`/`st.local`, which are counted — so no bytes are lost by classifying the `alloca` itself as bookkeeping. |
+| 9.7.18.1 | `stacksave` | `Move` | OK — register bookkeeping. |
+| 9.7.18.2 | `stackrestore` | `Move` | OK. |
+| 9.7.18.3 | `alloca` | `Move` | OK — the local-memory traffic it enables is counted at the `ld.local`/`st.local` that use it. |
 
 ## §9.7.19 Video Instructions
 
@@ -460,16 +460,16 @@ they produce 0/1 results).
 | § | Instruction | Today | Verdict & recommendation |
 |---|---|---|---|
 | 9.7.20.1 | `brkpt` | `Control` | OK. |
-| 9.7.20.2 | `nanosleep` | `Unknown` (verified) | Gap (harmless) — latency-only, zero flop/byte. Recommend `Ignore` (Tier 3). |
-| 9.7.20.3 | `pmevent` | `Unknown` | Gap (harmless) — profiler-event trigger. Recommend `Ignore` (Tier 3). |
+| 9.7.20.2 | `nanosleep` | `Ignore` | OK — affects when, never how much (misfit §E). |
+| 9.7.20.3 | `pmevent` | `Ignore` | OK — profiler trigger. |
 | 9.7.20.4 | `trap` | `Control` | OK. |
-| 9.7.20.5 | `setmaxnreg` | `Unknown` (verified) | Gap — register-file rebalancing hint, zero flop/byte, **but** warp-specialized Hopper kernels emit `setmaxnreg.inc/.dec` as standard boilerplate, so it arrives together with `wgmma`/`elect.sync`. Recommend `Ignore`, bundled into the Tier 2 Hopper sweep to keep sm_90 reports clean. |
+| 9.7.20.5 | `setmaxnreg` | `Ignore` | OK — register-file rebalancing hint, zero flop/byte. |
 
 ## Not in the ISA at all
 
 | Mnemonic | Today | Verdict & recommendation |
 |---|---|---|
-| `ldg` | `Memory { Global, Load }` | **Dead arm** — `ldg` is not a PTX instruction (the ISA spells it `ld.global.nc`; zero occurrences of `ldg` in the manual). Inherited from v1; it can never match valid PTX. Recommend deleting it, or keeping only with a comment naming a real producer that emits it. |
+| `ldg` | (no arm) | Was a dead arm inherited from v1 — `ldg` is not a PTX instruction (the ISA spells it `ld.global.nc`; zero occurrences of `ldg` in the manual). Deleted. |
 
 ---
 
@@ -565,16 +565,18 @@ flops or bytes. In descending order of importance:
    the report counts them (`instruction_classes.unparsed`) and lists
    them under unknowns, and the `|` destination form that was the
    verified instance now parses.
-2. **Collateral `Unknown`s from coarse arms**: integer `div` (caught
+2. ~~**Collateral `Unknown`s from coarse arms**~~ Fixed: integer `div` and `addc`/`subc`/`madc` have arms.
+   Originally: **Collateral `Unknown`s from coarse arms**: integer `div` (caught
    by the SFU reservation); `addc`/`subc`/`madc` (miss the arm their
    `.cc` partners hit). One line each.
-3. **Missing one-line arms for mnemonics real producers emit**:
+3. ~~**Missing one-line arms for mnemonics real producers emit**~~ Fixed (all of the Tier 3 list below has arms).
+   Originally: **Missing one-line arms for mnemonics real producers emit**:
    `elect.sync` (also needs the `d|p` parser form), `shf`,
    `setmaxnreg` — all three arrive with any Hopper corpus — plus the
    harmless tail (`cnot`, `fns`, `clmad`, `createpolicy`,
    `nanosleep`, `pmevent`, `mapa`, `getctarank`, `istypep`, stack
    ops).
-4. **One dead arm**: `ldg`.
+4. ~~**One dead arm**: `ldg`.~~ Deleted.
 
 None justify preemptive fixing under the demand-driven rule — but
 when a Phase 2 family PR touches `classify.rs`, sweeping the
