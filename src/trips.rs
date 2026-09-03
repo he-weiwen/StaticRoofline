@@ -295,8 +295,11 @@ impl<'a> Tracer<'a> {
         solve(&cmp, continue_if_true, a1, a0)
     }
 
-    /// In-loop registers whose ONLY in-loop definition is
-    /// `add reg, reg, const` → (reg, step).
+    /// In-loop registers whose ONLY in-loop definition adds a constant
+    /// to themselves → (reg, step). The addition may pass through other
+    /// single-definition registers (`t = i + 2; i = t - 1`, nvcc's
+    /// shape when the body also reads `i + 2`); the step is the sum
+    /// of the constants along that chain.
     fn induction_vars(&self, id: LoopId) -> HashMap<Symbol, i64> {
         let l = self.forest.get(id);
         let mut in_loop_defs: HashMap<Symbol, Vec<usize>> = HashMap::new();
@@ -312,33 +315,41 @@ impl<'a> Tracer<'a> {
                 }
             }
         }
-        let mut ivs = HashMap::new();
-        for (reg, sites) in &in_loop_defs {
-            let [site] = sites[..] else { continue };
+        let add_const = |site: usize| -> Option<(Symbol, i64)> {
             let Stmt::Instr(instr) = &self.kernel.stmts[site] else {
-                continue;
+                return None;
             };
             if self.module.interner.resolve(instr.mnemonic) != "add" {
-                continue;
+                return None;
             }
-            let ops = self.module.operand_ids(instr.operands);
-            if ops.len() != 3 {
-                continue;
-            }
-            let is_self = |id| matches!(self.module.operand(id), Operand::Register(r) if r == reg);
-            let as_const = |id| match self.module.operand(id) {
-                Operand::Immediate(text) => parse_imm(self.module.interner.resolve(*text)),
+            let [_, a, b] = self.module.operand_ids(instr.operands) else {
+                return None;
+            };
+            match (self.module.operand(*a), self.module.operand(*b)) {
+                (Operand::Register(r), Operand::Immediate(c))
+                | (Operand::Immediate(c), Operand::Register(r)) => {
+                    Some((*r, parse_imm(self.module.interner.resolve(*c))?))
+                }
                 _ => None,
-            };
-            let step = if is_self(ops[1]) {
-                as_const(ops[2])
-            } else if is_self(ops[2]) {
-                as_const(ops[1])
-            } else {
-                None
-            };
-            if let Some(step) = step {
-                ivs.insert(*reg, step);
+            }
+        };
+        let mut ivs = HashMap::new();
+        for (reg, sites) in &in_loop_defs {
+            let [mut site] = sites[..] else { continue };
+            let mut step = 0;
+            for _ in 0..8 {
+                let Some((src, c)) = add_const(site) else {
+                    break;
+                };
+                step += c;
+                if src == *reg {
+                    ivs.insert(*reg, step);
+                    break;
+                }
+                let Some([next]) = in_loop_defs.get(&src).map(|s| &s[..]) else {
+                    break;
+                };
+                site = *next;
             }
         }
         ivs
@@ -809,6 +820,21 @@ mod tests {
         );
         let trips = trips_of(&src);
         assert_eq!(trips[0].1.as_ref().unwrap().to_string(), "param_0 / 16");
+    }
+
+    #[test]
+    fn increment_through_an_intermediate_register() {
+        // k14's main loop: `t = i + 2` is also read by the body, so nvcc
+        // increments as `i = t - 1`.
+        let src = kernel_with(
+            N_PARAM,
+            "ld.param.u32 %r1, [k_param_0];\nmov.u32 %r2, 0;\n\
+             $L__L:\nadd.s32 %r3, %r2, 2;\nsetp.ge.u32 %p2, %r3, %r1;\n\
+             add.s32 %r2, %r3, -1;\n\
+             setp.lt.u32 %p1, %r2, %r1;\n@%p1 bra $L__L;\nret;",
+        );
+        let trips = trips_of(&src);
+        assert_eq!(trips[0].1.as_ref().unwrap().to_string(), "param_0");
     }
 
     #[test]
