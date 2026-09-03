@@ -246,6 +246,41 @@ impl TermSum {
     }
 }
 
+struct FlopTable {
+    by_precision: BTreeMap<Precision, TermSum>,
+    total: TermSum,
+}
+
+impl FlopTable {
+    fn new() -> Self {
+        FlopTable {
+            by_precision: Precision::ALL
+                .iter()
+                .map(|&p| (p, TermSum::default()))
+                .collect(),
+            total: TermSum::default(),
+        }
+    }
+
+    fn add(&mut self, precision: Precision, n: i64, mult: &SymExpr, at_most: bool) {
+        self.by_precision
+            .get_mut(&precision)
+            .expect("every precision pre-inserted")
+            .add(n, mult, at_most);
+        self.total.add(n, mult, at_most);
+    }
+
+    fn counts(&self) -> BTreeMap<String, Count> {
+        let mut out: BTreeMap<String, Count> = self
+            .by_precision
+            .iter()
+            .map(|(p, v)| (p.key().to_owned(), v.count()))
+            .collect();
+        out.insert("total".to_owned(), self.total.count());
+        out
+    }
+}
+
 /// `(constant coefficient, the rest)` of a product.
 fn split_const(e: SymExpr) -> (i64, SymExpr) {
     match e {
@@ -353,18 +388,9 @@ impl<'a> KernelBuilder<'a> {
     /// `cta_threads`, every per-thread count additionally scales by
     /// the CTA's thread count.
     fn aggregates(&self, below: Option<LoopId>, cta_threads: Option<u64>) -> Aggregates {
-        let mut flops: BTreeMap<&'static str, TermSum> = BTreeMap::new();
-        let mut flops_total = TermSum::default();
+        let mut flops = FlopTable::new();
         let mut bytes: BTreeMap<&'static str, (TermSum, TermSum)> = BTreeMap::new();
         let mut conversions = TermSum::default();
-        for p in [
-            Precision::F16,
-            Precision::BF16,
-            Precision::F32,
-            Precision::F64,
-        ] {
-            flops.insert(p.key(), TermSum::default());
-        }
         for s in ["global", "shared", "local"] {
             bytes.insert(s, Default::default());
         }
@@ -393,11 +419,7 @@ impl<'a> KernelBuilder<'a> {
                 let n = m.count as i64 * cta_threads.map_or(1, |t| t as i64);
                 match m.kind {
                     MeasureKind::Flops { precision, .. } => {
-                        flops
-                            .get_mut(precision.key())
-                            .expect("all precisions pre-inserted")
-                            .add(n, &mult, at_most);
-                        flops_total.add(n, &mult, at_most);
+                        flops.add(precision, n, &mult, at_most);
                     }
                     MeasureKind::Bytes { space, direction } => {
                         let entry = bytes.entry(space.key()).or_default();
@@ -418,11 +440,6 @@ impl<'a> KernelBuilder<'a> {
             }
         }
 
-        let mut flops_out: BTreeMap<String, Count> = flops
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.count()))
-            .collect();
-        flops_out.insert("total".to_owned(), flops_total.count());
         let bytes_out: BTreeMap<String, DirectionCounts> = bytes
             .iter()
             .map(|(k, (l, s))| {
@@ -437,7 +454,7 @@ impl<'a> KernelBuilder<'a> {
             .collect();
 
         // AI(global): defined when flops and global bytes are constants.
-        let ai_global = match (flops_total.expr().as_const(), bytes.get("global")) {
+        let ai_global = match (flops.total.expr().as_const(), bytes.get("global")) {
             (Some(f), Some((l, s))) => match (l.expr().as_const(), s.expr().as_const()) {
                 (Some(lb), Some(sb)) if lb + sb > 0 => Some(f as f64 / (lb + sb) as f64),
                 _ => None,
@@ -446,7 +463,7 @@ impl<'a> KernelBuilder<'a> {
         };
 
         Aggregates {
-            flops: flops_out,
+            flops: flops.counts(),
             bytes: bytes_out,
             conversions: conversions.count(),
             ai_global,
