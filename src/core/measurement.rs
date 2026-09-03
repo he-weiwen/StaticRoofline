@@ -3,9 +3,11 @@
 //!
 //! `count` is the magnitude contributed by ONE execution of the
 //! instruction by ONE thread (flops for `Flops`, bytes for `Bytes`,
-//! 1 for op-counting kinds). Loop trip multiplication happens at
-//! report aggregation (PR 12); until then everything is per-execution
-//! and the constants stay exact.
+//! 1 for op-counting kinds). A warp-collective instruction (the
+//! tensor families) contributes its warp total divided by the 32
+//! lanes that issue it, so every count adds up per thread. Loop trip
+//! multiplication happens at report aggregation (PR 12); until then
+//! everything is per-execution and the constants stay exact.
 //!
 //! Honesty is in the kinds: an instruction that moves statically
 //! unquantifiable bytes becomes `UnquantifiedBytes` (an op count with
@@ -15,16 +17,6 @@
 
 use super::intern::Symbol;
 use crate::classify::{ArithKind, Direction, Precision, Space};
-
-/// Which threads an instruction's `count` is per: everything Phase 1
-/// classifies is per-thread; warp-cooperative ops (tensor families,
-/// Phase 2) are per-warp. Normalization to per-CTA/launch happens with
-/// `--launch` in hand (PR 13).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Scope {
-    PerThread,
-    PerWarp,
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MeasureKind {
@@ -59,7 +51,6 @@ pub enum MeasureKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Measurement {
     pub kind: MeasureKind,
-    pub scope: Scope,
     pub count: u64,
     /// The instruction itself is `@%p`-guarded: its count is an upper
     /// bound regardless of where its block sits.

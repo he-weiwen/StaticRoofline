@@ -51,11 +51,12 @@ maps to exactly **one** class:
 | `Ignore` | provably zero flop/byte (hints, `nop`) | none, by policy |
 | `Unknown` | no arm matched | **counted and named in the report, never dropped** |
 
-and to exactly one `Measurement { kind, scope, count, predicated }`
-where `scope ∈ { PerThread, PerWarp }` (`core/measurement.rs`;
-everything classified today is `PerThread`, `PerWarp` is reserved for
-the tensor families). Counts are per-execution; loop-trip and launch
-multiplication happen at report time.
+and to exactly one `Measurement { kind, count, predicated }`
+(`core/measurement.rs`). Every count is per thread per execution: a
+warp-collective instruction contributes its warp total divided by the
+32 lanes that issue it (PTX ISA §4.5.1: `WARP_SZ` is 32 on every
+target to date). Loop-trip and launch multiplication happen at report
+time.
 
 So an instruction *fits* the model when it is one thing (arithmetic
 **or** memory **or** sync), its work belongs to one thread (or one
@@ -350,17 +351,17 @@ transfers are a different roofline with different machine tables
 §9.7.15.1–.3 (shapes, data types, block scaling) are context sections.
 Everything below is `Unknown` today via the `wmma`/`mma`/`ldmatrix`/
 `stmatrix`/`movmatrix` mnemonics — the named Phase 2 tensor item,
-**Tier 1**. All entries share one structural prerequisite: per-warp
-scope (`Scope::PerWarp` exists and is reserved for exactly this).
+**Tier 1**. All entries are warp-collective: their per-thread count
+is the warp total over 32.
 
 | § | Instruction | Today | Verdict & recommendation |
 |---|---|---|---|
 | 9.7.15.4.3 | `wmma.load` | `Unknown` | OK (deferred, Tier 1) — target `Memory` **PerWarp** (fragment load), 0 flops. The Phase 2 item pins v1's worst bug as a regression test: v1 matched bare `wmma` and gave `wmma.load` an MMA shape — 8192 phantom FLOPs per load. Role must split on the first modifier. |
-| 9.7.15.4.4 | `wmma.store` | `Unknown` | OK (deferred, Tier 1) — target `Memory` PerWarp, store side. |
-| 9.7.15.4.5 | `wmma.mma` | `Unknown` | OK (deferred, Tier 1) — target `Flop` PerWarp, 2·M·N·K per the shape modifier. |
-| 9.7.15.5.14 | `mma` | `Unknown` (verified) | OK (deferred, **Tier 1 — the single most important missing instruction**) — every tensor-core GEMM on sm_80/sm_89 emits `mma.sync`; target `Flop` PerWarp 2·M·N·K, precision from the D/A type modifiers (shape grammar verified in the backlog item). ⚠ misfit §D for two sub-cases: integer `mma` (s8/u8/b1 — int-ops, not flops) and block-scaled kinds (scale-factor arithmetic beyond 2·M·N·K); pick and document conventions when the arm lands. |
-| 9.7.15.5.15 | `ldmatrix` | `Unknown` | OK (deferred, Tier 1) — target `Memory{Shared, Load}` PerWarp; bytes = x1/x2/x4 × fragment size (grammar verified in k14). |
-| 9.7.15.5.16 | `stmatrix` | `Unknown` | OK (deferred, Tier 1) — target `Memory{Shared, Store}` PerWarp. |
+| 9.7.15.4.4 | `wmma.store` | `Unknown` | OK (deferred, Tier 1) — target `Memory`, store side, warp total / 32. |
+| 9.7.15.4.5 | `wmma.mma` | `Unknown` | OK (deferred, Tier 1) — target `Flop`, 2·M·N·K per warp over 32 lanes. |
+| 9.7.15.5.14 | `mma` | `Unknown` (verified) | OK (deferred, **Tier 1 — the single most important missing instruction**) — every tensor-core GEMM on sm_80/sm_89 emits `mma.sync`; target `Flop`, 2·M·N·K per warp over 32 lanes, precision from the D/A type modifiers (shape grammar verified in the backlog item). ⚠ misfit §D for two sub-cases: integer `mma` (s8/u8/b1 — int-ops, not flops) and block-scaled kinds (scale-factor arithmetic beyond 2·M·N·K); pick and document conventions when the arm lands. |
+| 9.7.15.5.15 | `ldmatrix` | `Unknown` | OK (deferred, Tier 1) — target `Memory{Shared, Load}`, warp total / 32; bytes = x1/x2/x4 × fragment size (grammar verified in k14). |
+| 9.7.15.5.16 | `stmatrix` | `Unknown` | OK (deferred, Tier 1) — target `Memory{Shared, Store}`, warp total / 32. |
 | 9.7.15.5.17 | `movmatrix` | `Unknown` | OK (deferred, Tier 2) — register-file transpose, zero bytes; target `Sync` (warp-collective register exchange) or a PerWarp `Move`; either is defensible, document the choice. |
 | 9.7.15.6.3 | `mma.sp` / `mma.sp::ordered_metadata` | `Unknown` (via `mma`) | OK (deferred, Tier 2) — ⚠ misfit §D: 2:4-sparse flop counting is genuinely ambiguous (dense 2·M·N·K, matching NCU's convention, vs effective half). Decide with a fixture and NCU cross-check, and label the choice in the report. |
 
@@ -492,16 +493,19 @@ Recommendation: start with (2) — the bytes side is what a roofline
 needs — and move to (1) only if a precision audit ever needs atomic
 flops.
 
-**§B — work not owned by the issuing thread.** `Scope` has
-`PerThread` and `PerWarp`; the ISA also has per-warpgroup
+**§B — work not owned by the issuing thread.** Counts are per
+thread, and a warp-collective's per-thread share (warp total / 32)
+divides exactly for every warp-level shape; the ISA also has per-warpgroup
 (`wgmma.*`, 4 warps), single-thread-issues-CTA-scale
 (`cp.async.bulk*`, `st.bulk`, `tcgen05.cp`), per-CTA-pair
 (`tcgen05.mma` with `cta_group::2`), and writes-to-a-*remote*-CTA
 (`st.async.shared::cluster`, `mapa`-derived accesses). Multiplying a
 per-thread count by threads-per-CTA overcounts a TMA copy by two to
-three orders of magnitude — so **growing the scope axis is the
-structural prerequisite for every Tier 2 family**, and the reason
-those arms should not be added piecemeal ahead of it.
+three orders of magnitude, and a single thread's share of a
+CTA-scale copy is not a whole number of bytes — so **a scope axis on
+`Measurement` is the structural prerequisite for every Tier 2
+family**, and the reason those arms should not be added piecemeal
+ahead of it.
 
 **§C — bytes that are not in the instruction text.**
 `cp.async.bulk.tensor` (+`.reduce`/`.prefetch` tensor forms): the byte

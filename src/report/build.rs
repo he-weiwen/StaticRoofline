@@ -350,8 +350,8 @@ impl<'a> KernelBuilder<'a> {
 
     /// Aggregate over blocks; `below` = aggregate within this loop
     /// (multipliers stop there), `None` = whole kernel. With
-    /// `cta_threads`, every count additionally scales by its scope's
-    /// per-CTA multiplier (per-thread × threads, per-warp × warps).
+    /// `cta_threads`, every per-thread count additionally scales by
+    /// the CTA's thread count.
     fn aggregates(&self, below: Option<LoopId>, cta_threads: Option<u64>) -> Aggregates {
         let mut flops: BTreeMap<&'static str, TermSum> = BTreeMap::new();
         let mut flops_total = TermSum::default();
@@ -390,11 +390,7 @@ impl<'a> KernelBuilder<'a> {
             for m in &bm.measurements {
                 let at_most =
                     bm.qualifier == CountQualifier::AtMost || m.predicated || chain_at_most;
-                let scope_scale = match cta_threads {
-                    Some(threads) => crate::machine::cta_multiplier(m.scope, threads) as i64,
-                    None => 1,
-                };
-                let n = m.count as i64 * scope_scale;
+                let n = m.count as i64 * cta_threads.map_or(1, |t| t as i64);
                 match m.kind {
                     MeasureKind::Flops { precision } => {
                         flops

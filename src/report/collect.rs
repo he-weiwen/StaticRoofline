@@ -21,7 +21,7 @@
 use crate::cfg::loops::LoopForest;
 use crate::cfg::{BlockId, Cfg};
 use crate::classify::{OpClass, classify};
-use crate::core::measurement::{MeasureKind, Measurement, Scope};
+use crate::core::measurement::{MeasureKind, Measurement};
 use crate::core::{Kernel, Module, Stmt};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -96,7 +96,6 @@ pub fn collect(
                 let mut push = |kind, count| {
                     measurements.push(Measurement {
                         kind,
-                        scope: Scope::PerThread,
                         count,
                         predicated,
                         provenance,

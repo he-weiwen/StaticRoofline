@@ -136,7 +136,7 @@ impl<'a> Stats<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::measurement::{Measurement, Scope};
+    use crate::core::measurement::Measurement;
 
     fn block(
         id: u32,
@@ -150,7 +150,6 @@ mod tests {
                 .into_iter()
                 .map(|(kind, count, predicated)| Measurement {
                     kind,
-                    scope: Scope::PerThread,
                     count,
                     predicated,
                     provenance: 0,

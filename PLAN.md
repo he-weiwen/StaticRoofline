@@ -91,7 +91,7 @@ as PRs land.
    honest; the SASS and NCU columns are Phase 2 items.
 4. **Launch config and architecture are inputs.** `--arch`, `--launch`,
    `--bind` are required for numeric output; symbolic output never blocks
-   on them. Scope normalization (per-thread/warp/CTA → per-CTA/launch) is
+   on them. Per-CTA/launch normalization of the per-thread counts is
    only coherent with blockDim in hand.
 
 **Audience boundary** (stated in README): the target is regular/tiled
@@ -699,9 +699,10 @@ of `lib/PTX/Classifier.cpp`)
   Plus a minimal `README.md`: install (`cargo install --path`),
   `analyze` usage, and the §1 audience boundary + anti-scope list
   verbatim — users read the same honesty contract the code enforces.
-- Tests: T1 knee math vs hand-computed values from the cited specs; T1
-  scope-normalization math (per-warp byte × blockDim cases — the v1
-  flatten-by-32× error class pinned at the unit level); T2: the S1
+- Tests: T1 knee math vs hand-computed values from the cited specs
+  (the per-warp `Scope` this PR added was removed once the tensor
+  arms landed: every count is per thread, warp-collective work
+  divided by the 32 lanes at classification); T2: the S1
   expected output incl. the two-arch verdict pair (sm_80 compute-bound /
   sm_86 memory-bound at AI=32) — **S1's status changes to pass**.
 - Done when: S1 green — all five Phase 1 scenarios now `pass` in

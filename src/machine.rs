@@ -1,5 +1,5 @@
-//! Machine model: per-SM peak/bandwidth tables, the roofline knee, and
-//! launch-scope normalization (PLAN.md §6, PR 13).
+//! Machine model: per-SM peak/bandwidth tables and the roofline knee
+//! (PLAN.md §6, PR 13).
 //!
 //! Tables live in `data/machine/*.toml` (sources cited inline there)
 //! and are embedded at compile time — the binary needs no data
@@ -12,7 +12,6 @@
 //! AI(global) against the knee — both numbers appear in the report so
 //! the comparison is checkable.
 
-use crate::core::measurement::Scope;
 use serde::Deserialize;
 use std::collections::BTreeMap;
 
@@ -59,17 +58,6 @@ impl Machine {
     }
 }
 
-/// How many of a measurement's `count` units one CTA executes: the
-/// per-scope multiplier for `--launch` normalization. The v1
-/// flatten-by-32× error class lives exactly here — a per-warp count
-/// scales by the number of *warps*, never by the thread count.
-pub fn cta_multiplier(scope: Scope, threads_per_cta: u64) -> u64 {
-    match scope {
-        Scope::PerThread => threads_per_cta,
-        Scope::PerWarp => threads_per_cta.div_ceil(32),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -109,17 +97,5 @@ mod tests {
                 .knee_flop_per_byte("bf16")
                 .is_none()
         );
-    }
-
-    #[test]
-    fn cta_normalization_scales_by_scope_not_blindly_by_threads() {
-        // Per-thread: 4 B per thread × 128 threads = 512 B per CTA.
-        assert_eq!(cta_multiplier(Scope::PerThread, 128), 128);
-        // Per-warp: 512 B per warp × 128 threads = 4 warps = 2048 B —
-        // NOT ×128 (the v1 flatten-by-32× error, pinned).
-        assert_eq!(cta_multiplier(Scope::PerWarp, 128), 4);
-        // Partial warps round up: 100 threads = 4 warps.
-        assert_eq!(cta_multiplier(Scope::PerWarp, 100), 4);
-        assert_eq!(cta_multiplier(Scope::PerWarp, 1), 1);
     }
 }
