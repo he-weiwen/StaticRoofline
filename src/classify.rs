@@ -15,12 +15,13 @@
 //! - an arithmetic mnemonic is a flop only when it carries an FP type
 //!   modifier; `mad.lo.s32`/`add.s64` address arithmetic is non-flop
 //!   (v1 gave integer `mad` 2 flops of precision "Other");
-//! - `div`/`sqrt`/`rcp`/... are the SFU family, a Phase 2 item with
-//!   its own documented FLOP policy; until then they are Unknown, not
-//!   silently 1-flop.
+//! - `div`/`sqrt`/`rcp`/... are special-function-unit work: one flop
+//!   per invocation on the `Sfu` pipe, never mixed into the cuda-core
+//!   table (v1 counted them as ordinary 1-flop arithmetic).
 //!
 //! FLOPs convention (Williams roofline accounting, as v1): fma/mad = 2
-//! per invocation, add/sub/mul/min/max/abs/neg/copysign = 1, all
+//! per invocation, add/sub/mul/min/max/abs/neg/copysign = 1, the SFU
+//! family = 1 per result (the operation, not its SASS expansion), all
 //! multiplied by packed lanes (`f16x2` = ×2).
 
 use crate::core::{Instr, Module, Operand};
@@ -194,6 +195,26 @@ pub fn classify(module: &Module, instr: &Instr) -> OpClass {
         "add" | "sub" | "mul" | "min" | "max" | "abs" | "neg" | "copysign" => match fp {
             Some((p, lanes)) => OpClass::Flop {
                 pipe: Pipe::CudaCore,
+                precision: p,
+                flops: lanes,
+            },
+            None => OpClass::NonFlopArith {
+                kind: ArithKind::Integer,
+            },
+        },
+
+        // -- special function unit (PTX ISA §9.7.3.8, .13–.22; §9.7.4.9–10) --
+        "rcp" | "sqrt" | "rsqrt" | "sin" | "cos" | "lg2" | "ex2" | "tanh" => match fp {
+            Some((p, lanes)) => OpClass::Flop {
+                pipe: Pipe::Sfu,
+                precision: p,
+                flops: lanes,
+            },
+            None => OpClass::Unknown,
+        },
+        "div" => match fp {
+            Some((p, lanes)) => OpClass::Flop {
+                pipe: Pipe::Sfu,
                 precision: p,
                 flops: lanes,
             },
@@ -982,11 +1003,50 @@ mod tests {
     }
 
     #[test]
+    fn sfu_family_is_one_flop_per_result_on_its_own_pipe() {
+        let sfu = |precision, flops| OpClass::Flop {
+            pipe: Pipe::Sfu,
+            precision,
+            flops,
+        };
+        assert_eq!(
+            class_of("ex2.approx.ftz.f32 %f1, %f2;"),
+            sfu(Precision::F32, 1)
+        );
+        assert_eq!(
+            class_of("ex2.approx.f16x2 %r1, %r2;"),
+            sfu(Precision::F16, 2)
+        );
+        assert_eq!(
+            class_of("rsqrt.approx.f64 %fd1, %fd2;"),
+            sfu(Precision::F64, 1)
+        );
+        assert_eq!(
+            class_of("div.rn.f32 %f1, %f2, %f3;"),
+            sfu(Precision::F32, 1)
+        );
+        assert_eq!(
+            class_of("div.full.f32 %f1, %f2, %f3;"),
+            sfu(Precision::F32, 1)
+        );
+        assert_eq!(class_of("sqrt.rn.f64 %fd1, %fd2;"), sfu(Precision::F64, 1));
+        assert_eq!(
+            class_of("tanh.approx.bf16x2 %r1, %r2;"),
+            sfu(Precision::BF16, 2)
+        );
+        // Integer division (§9.7.1.9) is address arithmetic, like rem.
+        assert_eq!(
+            class_of("div.u32 %r1, %r2, %r3;"),
+            OpClass::NonFlopArith {
+                kind: ArithKind::Integer
+            }
+        );
+    }
+
+    #[test]
     fn phase_2_families_are_unknown_not_zero() {
         for text in [
             "atom.global.add.u32 %r1, [%rd1], %r2;",
-            "sqrt.rn.f32 %f1, %f2;",
-            "div.rn.f32 %f1, %f2, %f3;",
             "tex.2d.v4.f32.f32 {%f1, %f2, %f3, %f4}, [t, {%f5, %f6}];",
         ] {
             assert_eq!(class_of(text), OpClass::Unknown, "{text}");

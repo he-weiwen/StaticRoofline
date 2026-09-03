@@ -93,7 +93,7 @@ decision, not just an arm).
 | 9.7.1.6 | `mul24` | `Integer` | OK. |
 | 9.7.1.7 | `mad24` | `Integer` | OK. |
 | 9.7.1.8 | `sad` | `Integer` | OK. |
-| 9.7.1.9 | `div` | `Unknown` | **Wart** — `div` was reserved wholesale for the Phase 2 SFU policy (an FP concern), catching `div.s32`/`div.u64` as collateral. The existing FP-modifier check can route integer `div` to `Integer` today, exactly as `rem` already is. One-line fix (Tier 3). |
+| 9.7.1.9 | `div` | `Integer` (the `div` arm: no FP type modifier ⇒ integer, exactly as `rem`) | OK — the former collateral-Unknown wart is fixed. |
 | 9.7.1.10 | `rem` | `Integer` | OK — and the standing counterexample to the `div` wart. |
 | 9.7.1.11 | `abs` | `Integer` (via the FP-check arm) | OK. |
 | 9.7.1.12 | `neg` | `Integer` (same) | OK. |
@@ -133,21 +133,21 @@ decision, not just an arm).
 | 9.7.3.5 | `mul` | `Flop` ×1 × lanes | OK. |
 | 9.7.3.6 | `fma` | `Flop` ×2 × lanes | OK — the standard 2-flops-per-FMA convention. |
 | 9.7.3.7 | `mad` | `Flop` ×2 | OK — FP `mad` is fused on all modern targets; identical to `fma` for counting. |
-| 9.7.3.8 | `div` | `Unknown` (deliberate) | OK (deferred, Tier 1) — ⚠ model misfit: no single right flop count exists for divides (see misfits §D). Softmax denominators make it audience-critical. |
+| 9.7.3.8 | `div` | `Flop { Sfu, type, 1 × lanes }` | OK — SFU policy (misfit §D, decided): one flop per result on the `sfu` pipe, whatever the `.approx`/`.full`/`.rnd` form expands to in SASS; the machine tables carry no SFU peak, so an SFU-dominated loop reports its knee as a named unknown. |
 | 9.7.3.9 | `abs` | `Flop` ×1 | OK — with the cross-check caveat: the planned NCU measured-flops formula (`2·ffma + fmul + fadd`) excludes it, so abs-heavy kernels will show a static-vs-measured gap. Static side is defensible; document when NCU import lands. |
 | 9.7.3.10 | `neg` | `Flop` ×1 | OK — same caveat as `abs`. |
 | 9.7.3.11 | `min` | `Flop` ×1 | OK — same caveat. |
 | 9.7.3.12 | `max` | `Flop` ×1 | OK — same caveat. |
-| 9.7.3.13 | `rcp` | `Unknown` (deliberate) | OK (deferred, Tier 1) — ⚠ model misfit §D; normalization layers hit it. |
-| 9.7.3.14 | `rcp.approx.ftz.f64` | `Unknown` (routes through the same `rcp` arm-to-be) | OK (deferred, Tier 1) — separate ISA section, same mnemonic; no extra work when the SFU arm lands. |
-| 9.7.3.15 | `sqrt` | `Unknown` (deliberate) | OK (deferred, Tier 1) — misfit §D. |
-| 9.7.3.16 | `rsqrt` | `Unknown` (deliberate) | OK (deferred, Tier 1) — layernorm/RMSNorm hit it; misfit §D. |
-| 9.7.3.17 | `rsqrt.approx.ftz.f64` | `Unknown` (same `rsqrt` routing) | OK (deferred, Tier 1). |
-| 9.7.3.18 | `sin` | `Unknown` (deliberate) | OK (deferred, Tier 1) — rare in the audience (RoPE tables are usually precomputed); comes free with the SFU family. |
-| 9.7.3.19 | `cos` | `Unknown` (deliberate) | OK (deferred, Tier 1) — same. |
-| 9.7.3.20 | `lg2` | `Unknown` (deliberate) | OK (deferred, Tier 1). |
-| 9.7.3.21 | `ex2` | `Unknown` (deliberate) | OK (deferred, Tier 1) — **the** softmax instruction; the first attention kernel makes it the top-ranked unknown. |
-| 9.7.3.22 | `tanh` | `Unknown` (deliberate) | OK (deferred, Tier 1) — GELU/activation paths. |
+| 9.7.3.13 | `rcp` | `Flop { Sfu, type, 1 × lanes }` | OK — SFU policy as `div` (§9.7.3.8). |
+| 9.7.3.14 | `rcp.approx.ftz.f64` | `Flop { Sfu, f64, 1 }` (same `rcp` arm) | OK. |
+| 9.7.3.15 | `sqrt` | `Flop { Sfu, type, 1 × lanes }` | OK — SFU policy as `div` (§9.7.3.8). |
+| 9.7.3.16 | `rsqrt` | `Flop { Sfu, type, 1 × lanes }` | OK — SFU policy as `div` (§9.7.3.8). |
+| 9.7.3.17 | `rsqrt.approx.ftz.f64` | `Flop { Sfu, f64, 1 }` (same `rsqrt` arm) | OK. |
+| 9.7.3.18 | `sin` | `Flop { Sfu, type, 1 × lanes }` | OK — SFU policy as `div` (§9.7.3.8). |
+| 9.7.3.19 | `cos` | `Flop { Sfu, type, 1 × lanes }` | OK — SFU policy as `div` (§9.7.3.8). |
+| 9.7.3.20 | `lg2` | `Flop { Sfu, type, 1 × lanes }` | OK — SFU policy as `div` (§9.7.3.8). |
+| 9.7.3.21 | `ex2` | `Flop { Sfu, type, 1 × lanes }` | OK — SFU policy as `div` (§9.7.3.8). |
+| 9.7.3.22 | `tanh` | `Flop { Sfu, type, 1 × lanes }` | OK — SFU policy as `div` (§9.7.3.8). |
 
 ## §9.7.4 Half Precision Floating-Point Instructions
 
@@ -161,8 +161,8 @@ decision, not just an arm).
 | 9.7.4.6 | `abs` | `Flop` ×1 × lanes | OK (same caveat). |
 | 9.7.4.7 | `min` | `Flop` ×1 × lanes | OK (same caveat). |
 | 9.7.4.8 | `max` | `Flop` ×1 × lanes | OK (same caveat). |
-| 9.7.4.9 | `tanh` | `Unknown` (SFU deferral) | OK (deferred, Tier 1) — half-precision fast-activation path. |
-| 9.7.4.10 | `ex2` | `Unknown` (SFU deferral) | OK (deferred, Tier 1) — `ex2.approx.f16x2` is the fast-softmax core in attention kernels; highest-value SFU entry together with the f32 form. |
+| 9.7.4.9 | `tanh` | `Flop { Sfu, f16/bf16, lanes }` | OK — `.f16x2`/`.bf16x2` count two results. |
+| 9.7.4.10 | `ex2` | `Flop { Sfu, f16/bf16, lanes }` | OK — the fast-softmax core in attention kernels, two results per packed instruction. |
 
 ## §9.7.5 Mixed Precision Floating-Point Instructions
 
