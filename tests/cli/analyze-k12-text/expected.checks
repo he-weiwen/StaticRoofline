@@ -4,6 +4,8 @@ knee @ sm_80 (A100-SXM4-40GB, from target-directive): f16 tensor 200.6 flop/B = 
 shared memory [static]: 16384 B per CTA
 loop 12_double_buffer.cuh:114 ($L__BB0_5)
 trips = param_2 / 16
+instructions = <= 98
+workload: global -> shared copy 16 B <= 4, shared load 16 B 20, tensor f16 16
 tensor flops = 4096  (f16 4096)
 global bytes: load <= 64 B, store 0 B
 shared bytes: load 320 B, store <= 64 B

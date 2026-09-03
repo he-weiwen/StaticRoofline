@@ -846,6 +846,33 @@ LOC each, every ISA claim cited from the manual by section)
   fp8 (a counting convention to choose with a fixture and an NCU
   cross-check); `movmatrix`.
 
+**PR 30 — Report only what the PTX can attest.** (seven commits; the
+answer to "is the output overclaiming?")
+- The compute/memory-bound verdict is gone. Requested bytes are
+  neither DRAM traffic (overfetch) nor a lower bound on it (cache
+  reuse — the README's RTX 4090 measurement), so no label is
+  supportable. `knees` replaces `verdicts`: each entry carries the
+  part's peak, its bandwidth and their quotient next to the loop's
+  requested AI; the reader compares.
+- `hot_loop` → `heaviest_loop`, ranked and titled by static weight.
+- `ai_global` is `{value, bound}` — exact, `at_least` (exact flops
+  over bytes that are an upper bound) or `at_most`; a bound over a
+  bound is not printed at all, and the text says why.
+- `.maxntid` is a maximum: `launch.exact` is false there and every
+  per-CTA total becomes an upper bound.
+- One contract line at the top of the text report: static, per
+  thread, as requested, not measured, not what the memory system
+  moves.
+- `Communication` (shfl/vote/match/redux/elect) split out of `Sync`.
+- Per-iteration instruction counts by kind (`instructions` on every
+  aggregate; memory kinds carry the access width; predicated
+  instructions count in full; register moves on their own line as
+  the PTX-not-SASS caveat), with a runner identity that the rows sum
+  to the total. ★S10.2 pins k14's 101 per tile; the k5 text case
+  pins its 128 two-byte shared loads per tile.
+- Expected outputs, README and this plan updated in the same series.
+  The S1 rows now assert the knee pair, not a label.
+
 ### Phase 2 — the demand-driven backlog
 
 Nothing here is scheduled. An item starts only when its trigger fires;
@@ -1059,6 +1086,7 @@ Phase 1:
 - [x] PR 15 — static shared memory per CTA (★S7.1/S7.2 assertions + `ptxas -v` cross-check)
 - [x] PR 16 — typed index arenas (`IndexVec`/`IdxRange`) + module-scope `.shared` decls
 - [x] PRs 17–29 — tensor-core / async / atomic / SFU families ★S10 (the first Phase 2 item)
+- [x] PR 30 — report only what the PTX can attest: knees not verdicts, bounded AI, instruction counts by kind
 
 Phase 2 (backlog — tick when triggered and executed):
 - [x] tensor/async/atomic/SFU families (+ k11/k12/k14/mma_demo fixtures) ★S10 — PRs 17–29

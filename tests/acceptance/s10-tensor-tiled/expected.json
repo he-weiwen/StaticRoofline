@@ -14,6 +14,16 @@
           "name": "14_ldmatrix_mma.cuh:208",
           "trips": {"expr": "param_2 / 16"},
           "per_iteration": {
+            "instructions": {
+              "total": {"expr": "101", "at_most": true},
+              "by_kind": {
+                "tensor f16": {"expr": "32", "at_most": false},
+                "shared load 16 B": {"expr": "4", "at_most": false},
+                "shared load 8 B": {"expr": "8", "at_most": false},
+                "global -> shared copy 16 B": {"expr": "4", "at_most": true},
+                "integer arithmetic": {"expr": "38", "at_most": true}
+              }
+            },
             "flops": {"total": {"expr": "0", "at_most": false}},
             "tensor_flops": {"f16": {"expr": "4096", "at_most": false}},
             "bytes": {

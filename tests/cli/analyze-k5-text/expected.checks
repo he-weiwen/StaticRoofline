@@ -3,6 +3,9 @@ heaviest loop (static weight): 5_2d_blocktiling.cuh:39
 shared memory [static]: 2048 B per CTA
 loop 5_2d_blocktiling.cuh:39 ($L__BB0_2)
 trips = ceildiv(param_2, 8)
+instructions = 1051
+workload: cuda-core f32 512, global load 2 B 16, shared load 2 B 128, shared store 2 B 16
+bookkeeping: compare / select 9, control 9, conversion 128, integer arithmetic 212, synchronization 2
 AI(global) = 32 flop/B
 loop 5_2d_blocktiling.cuh:53 ($L__BB0_3)
 trips = 8
