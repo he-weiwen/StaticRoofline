@@ -189,7 +189,8 @@ def _verify_ai_consistency(report):
         if ai is None:
             return
         try:
-            flops = int(agg["flops"]["total"]["expr"])
+            flops = sum(int(agg[t]["total"]["expr"])
+                        for t in ("flops", "tensor_flops", "sfu_flops") if t in agg)
             by = agg["bytes"]["global"]
             bytes_total = int(by["load"]["expr"]) + int(by["store"]["expr"])
         except (KeyError, ValueError):

@@ -8,6 +8,7 @@
 //! printed, even (especially) when present.
 
 use super::tree::*;
+use std::collections::BTreeMap;
 use std::fmt::Write;
 
 pub fn render(report: &Report) -> String {
@@ -150,22 +151,28 @@ fn count(c: &Count) -> String {
     }
 }
 
-fn render_aggregates(w: &mut String, a: &Aggregates, pad: &str) {
-    let total = &a.flops["total"];
-    if total.expr != "0" {
-        let by_precision: Vec<String> = a
-            .flops
-            .iter()
-            .filter(|(k, v)| k.as_str() != "total" && v.expr != "0")
-            .map(|(k, v)| format!("{k} {}", count(v)))
-            .collect();
-        let _ = writeln!(
-            w,
-            "{pad}flops = {}  ({})",
-            count(total),
-            by_precision.join(", ")
-        );
+fn render_flops(w: &mut String, pad: &str, label: &str, table: &BTreeMap<String, Count>) {
+    let total = &table["total"];
+    if total.expr == "0" {
+        return;
     }
+    let by_precision: Vec<String> = table
+        .iter()
+        .filter(|(k, v)| k.as_str() != "total" && v.expr != "0")
+        .map(|(k, v)| format!("{k} {}", count(v)))
+        .collect();
+    let _ = writeln!(
+        w,
+        "{pad}{label} = {}  ({})",
+        count(total),
+        by_precision.join(", ")
+    );
+}
+
+fn render_aggregates(w: &mut String, a: &Aggregates, pad: &str) {
+    render_flops(w, pad, "flops", &a.flops);
+    render_flops(w, pad, "tensor flops", &a.tensor_flops);
+    render_flops(w, pad, "sfu flops", &a.sfu_flops);
     for (space, d) in &a.bytes {
         if d.load.expr == "0" && d.store.expr == "0" {
             continue;

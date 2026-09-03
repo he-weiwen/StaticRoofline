@@ -9,8 +9,8 @@
 //!   marks upper bounds (rendered `≤` in text);
 //! - trips are `{"expr": ...}` or `{"unknown": reason}` — an unknown
 //!   is a result, not an error;
-//! - the flop table always carries all four FP precisions plus
-//!   "total", so "0 f16 flops" is assertable (S8);
+//! - the three flop tables (one per pipe) always carry every
+//!   precision plus "total", so "0 f16 flops" is assertable (S8);
 //! - byte tables always carry global/shared/local; other spaces appear
 //!   when touched;
 //! - `coverage` is `{metric: {num, den}}` count pairs — the runner
@@ -181,12 +181,18 @@ pub struct Unroll {
 
 #[derive(Debug, Serialize)]
 pub struct Aggregates {
-    /// Keys: "total", "f16", "bf16", "f32", "f64" — always present.
+    /// CUDA-core flops. Keys: "total" and every precision key
+    /// ("f16", "bf16", "tf32", "f32", "f64") — always present.
     pub flops: BTreeMap<String, Count>,
+    /// Tensor-core flops (`wmma.mma`, `mma`), same keys.
+    pub tensor_flops: BTreeMap<String, Count>,
+    /// Special-function-unit flops (`ex2`, `rsqrt`, ...), same keys.
+    pub sfu_flops: BTreeMap<String, Count>,
     /// Keys: space names; global/shared/local always present.
     pub bytes: BTreeMap<String, DirectionCounts>,
     pub conversions: Count,
-    /// flops per global byte, when both are constants and bytes > 0.
+    /// Flops of all three pipes per global byte, when both are
+    /// constants and bytes > 0.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ai_global: Option<f64>,
     /// Straight-line repeated source lines (fully-unrolled loops):
