@@ -158,8 +158,11 @@ pub enum OpClass {
         read_bytes: Option<u32>,
         written_bytes: Option<u32>,
     },
-    /// Barriers, fences, and warp-collective communication.
+    /// Barriers, fences, and waits (PTX ISA §9.7.14, "Synchronization").
     Sync,
+    /// Lane-to-lane register exchange and warp votes (§9.7.14,
+    /// "Communication"): shuffles, votes, `match`, `redux`, `elect`.
+    Communication,
     /// Branches, returns, calls.
     Control,
     /// Correctly contributes nothing (`nop`, cache hints).
@@ -298,7 +301,7 @@ pub fn classify(module: &Module, instr: &Instr) -> OpClass {
 
         // -- sync / warp collectives ---------------------------------------
         "bar" | "barrier" | "mbarrier" | "membar" | "fence" => OpClass::Sync,
-        "shfl" | "vote" | "match" | "activemask" | "redux" | "elect" => OpClass::Sync,
+        "shfl" | "vote" | "match" | "activemask" | "redux" | "elect" => OpClass::Communication,
 
         // -- control -----------------------------------------------------------
         "bra" | "brx" | "ret" | "exit" | "call" | "trap" | "brkpt" => OpClass::Control,
@@ -798,7 +801,7 @@ mod tests {
                 "{text}"
             );
         }
-        assert_eq!(class_of("elect.sync %r1|%p1, %r2;"), OpClass::Sync);
+        assert_eq!(class_of("elect.sync %r1|%p1, %r2;"), OpClass::Communication);
         for text in [
             "createpolicy.fractional.L2::evict_last.b64 %rd1, 0.25;",
             "nanosleep.u32 100;",
@@ -843,7 +846,15 @@ mod tests {
         assert_eq!(class_of("membar.gl;"), OpClass::Sync);
         assert_eq!(
             class_of("shfl.sync.bfly.b32 %r1, %r2, %r3, %r4, %r5;"),
-            OpClass::Sync
+            OpClass::Communication
+        );
+        assert_eq!(
+            class_of("vote.sync.any.pred %p1, %p2, %r1;"),
+            OpClass::Communication
+        );
+        assert_eq!(
+            class_of("redux.sync.add.s32 %r1, %r2, %r3;"),
+            OpClass::Communication
         );
         assert_eq!(class_of("@%p1 bra $L__X;"), OpClass::Control);
         assert_eq!(class_of("ret;"), OpClass::Control);

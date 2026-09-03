@@ -47,7 +47,8 @@ maps to exactly **one** class:
 | `NonFlopArith { Conversion / Integer / Predicate / Move }` | `cvt`; integer/bit ops; compares & selects; `mov`/`cvta` | none (instruction-mix reporting only) |
 | `Memory { space, direction, bytes }` | `bytes = None` feeds the unquantified counter, never zero | bytes, bucketed by state space |
 | `Copy { from, to, read_bytes, written_bytes }` | one instruction that reads one space and writes another (`cp.async`) — one memory instruction, two byte measurements | bytes on both sides |
-| `Sync` | barriers, fences, warp collectives | none |
+| `Sync` | barriers, fences, waits | none |
+| `Communication` | shuffles, votes, `match`, `redux`, `elect` — lane-to-lane register exchange | none (counted per iteration: for a warp reduction it *is* the work) |
 | `Control` | branches, returns, calls, traps | none |
 | `Ignore` | provably zero flop/byte (hints, `nop`) | none, by policy |
 | `Unknown` | no arm matched | **counted and named in the report, never dropped** |
@@ -215,8 +216,8 @@ requested.
 |---|---|---|---|
 | 9.7.9.3 | `mov` | `NonFlopArith::Move` | OK — includes special-register reads (`mov.u32 %r, %tid.x`). |
 | 9.7.9.4 | `mov` (vector pack/unpack form) | `Move` (same arm) | OK. |
-| 9.7.9.5 | `shfl` (deprecated) | `Sync` | OK — same arm as `shfl.sync`; zero DRAM bytes is the correct accounting for intra-warp exchange. |
-| 9.7.9.6 | `shfl.sync` | `Sync` | OK. |
+| 9.7.9.5 | `shfl` (deprecated) | `Communication` | OK — same arm as `shfl.sync`; zero DRAM bytes is the correct accounting for intra-warp exchange. |
+| 9.7.9.6 | `shfl.sync` | `Communication` | OK. |
 | 9.7.9.7 | `prmt` | `Integer` | OK. |
 | 9.7.9.8 | `ld` | `Memory { space, Load, width × v2/v4/v8 }` | OK — space from modifiers with `Generic` as its own honest bucket (`cvta`-provenance refinement is documented anti-scope until a fixture emits generic loads); `.shared::cta` folds into `Shared`, `.shared::cluster` distinct; `volatile`/cache-op/eviction modifiers transparent. |
 | 9.7.9.9 | `ld.global.nc` | `Memory { Global, Load, bytes }` (via the `ld` arm; verified) | OK. |
@@ -325,13 +326,13 @@ transfers are a different roofline with different machine tables
 | 9.7.14.6 | `red` | `Memory { space, Store, width }` | OK — write side only; the read is implicit (v1's policy, kept). |
 | 9.7.14.7 | `red.async` | `Unknown` (via `red`) | OK (deferred, Tier 2) — misfit §A + async completion; cluster reductions. |
 | 9.7.14.8 | `multimem.red.async` | `Unknown` | OK (deferred, Tier 4) — misfit §A+§F. |
-| 9.7.14.9 | `vote` (deprecated) | `Sync` | OK. |
-| 9.7.14.10 | `vote.sync` | `Sync` | OK. |
-| 9.7.14.11 | `match.sync` | `Sync` | OK for the plain form (verified). **Wart**: `match.all.sync` with the optional `d|p` destination hits the parser gap (verified `Unparsed`) — fix with the shared `d|p` operand form (Tier 2 rider). |
-| 9.7.14.12 | `activemask` | `Sync` | OK. |
-| 9.7.14.13 | `redux.sync` | `Sync` | OK, with a flag: ⚠ misfit §A (mild) — it computes a warp-wide arithmetic reduction (integer ops; `f32` min/max on newer targets), which vanishes into `Sync`. Consistent with the convention (min/max would be 1 flop per *warp*, negligible), but the decision should be stated when the SFU/pipe axis lands. |
+| 9.7.14.9 | `vote` (deprecated) | `Communication` | OK. |
+| 9.7.14.10 | `vote.sync` | `Communication` | OK. |
+| 9.7.14.11 | `match.sync` | `Communication` | OK for the plain form (verified). **Wart**: `match.all.sync` with the optional `d|p` destination hits the parser gap (verified `Unparsed`) — fix with the shared `d|p` operand form (Tier 2 rider). |
+| 9.7.14.12 | `activemask` | `Communication` | OK. |
+| 9.7.14.13 | `redux.sync` | `Communication` | OK, with a flag: ⚠ misfit §A (mild) — it also performs the reduction arithmetic (integer; `f32` min/max/add on the newest targets). Counted as communication, not as flops: an integer reduction has no roofline home and the f32 form has no fixture. |
 | 9.7.14.14 | `griddepcontrol` | `Ignore` | OK — defensible; arguably `Sync` (it orders dependent grids), but nothing downstream distinguishes them. Cosmetic; keep. |
-| 9.7.14.15 | `elect.sync` | `Sync` (the `d|p` destination parses since the `|` operand change) | OK — warp-collective leader election. |
+| 9.7.14.15 | `elect.sync` | `Communication` (the `d|p` destination parses since the `|` operand change) | OK — warp-collective leader election. |
 | 9.7.14.16.12 | `mbarrier.init` | `Sync` (via `mbarrier`) | OK — technically writes 8 bytes of shared memory to initialize the object; negligible by construction, `Sync` is right. |
 | 9.7.14.16.13 | `mbarrier.inval` | `Sync` | OK. |
 | 9.7.14.16.14 | `mbarrier.expect_tx` | `Sync` | OK. |

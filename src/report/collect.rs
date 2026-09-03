@@ -41,8 +41,8 @@ impl CountQualifier {
 }
 
 /// Instruction-class tallies for one block; the accounting identity is
-/// `flop + non_flop_arith + memory + sync + control + ignore + unknown
-/// == total`.
+/// `flop + non_flop_arith + memory + sync + communication + control +
+/// ignore + unknown == total`.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct ClassCounts {
     pub total: u32,
@@ -50,6 +50,7 @@ pub struct ClassCounts {
     pub non_flop_arith: u32,
     pub memory: u32,
     pub sync: u32,
+    pub communication: u32,
     pub control: u32,
     pub ignore: u32,
     pub unknown: u32,
@@ -143,6 +144,10 @@ pub fn collect(
                     OpClass::Sync => {
                         counts.sync += 1;
                         push(MeasureKind::SyncOps, 1);
+                    }
+                    OpClass::Communication => {
+                        counts.communication += 1;
+                        push(MeasureKind::CommunicationOps, 1);
                     }
                     OpClass::Control => {
                         counts.control += 1;
@@ -279,7 +284,14 @@ mod tests {
         let c = blocks[0].class_counts;
         assert_eq!(c.total, 7);
         assert_eq!(
-            c.flop + c.non_flop_arith + c.memory + c.sync + c.control + c.ignore + c.unknown,
+            c.flop
+                + c.non_flop_arith
+                + c.memory
+                + c.sync
+                + c.communication
+                + c.control
+                + c.ignore
+                + c.unknown,
             c.total,
             "accounting identity"
         );

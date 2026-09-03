@@ -61,7 +61,8 @@ pub struct KernelReport {
     /// fixed at launch and so is not statically knowable.
     pub shared_memory: SharedMemory,
     /// Instruction-class tallies; the verifier's accounting identity
-    /// (`flop + ... + unknown == total`) runs on these.
+    /// (`flop + non_flop_arith + memory + sync + communication +
+    /// control + ignore + unknown == total`) runs on these.
     pub instruction_classes: InstructionClasses,
     pub hot_loop: Option<String>,
     /// Roofline verdicts, one per requested (or defaulted)
@@ -101,6 +102,7 @@ pub struct InstructionClasses {
     pub non_flop_arith: u64,
     pub memory: u64,
     pub sync: u64,
+    pub communication: u64,
     pub control: u64,
     pub ignore: u64,
     pub unknown: u64,

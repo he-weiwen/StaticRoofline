@@ -106,7 +106,8 @@ def _verify_instruction_accounting(report):
     """Every instruction is accounted exactly once (the check v1's
     AsyncCopy silent-zero bug would have failed)."""
     out = []
-    parts = ("flop", "non_flop_arith", "memory", "sync", "control", "ignore", "unknown")
+    parts = ("flop", "non_flop_arith", "memory", "sync", "communication",
+             "control", "ignore", "unknown")
     for k in report.get("kernels", []):
         c = k.get("instruction_classes", {})
         got = sum(c.get(p, 0) for p in parts)

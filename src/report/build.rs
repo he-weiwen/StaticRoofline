@@ -438,6 +438,7 @@ impl<'a> KernelBuilder<'a> {
                     MeasureKind::UnquantifiedBytes { .. }
                     | MeasureKind::NonFlopOps { .. }
                     | MeasureKind::SyncOps
+                    | MeasureKind::CommunicationOps
                     | MeasureKind::ControlOps
                     | MeasureKind::UnknownOps { .. } => {}
                 }
@@ -819,6 +820,7 @@ impl<'a> KernelBuilder<'a> {
             classes.non_flop_arith += c.non_flop_arith as u64;
             classes.memory += c.memory as u64;
             classes.sync += c.sync as u64;
+            classes.communication += c.communication as u64;
             classes.control += c.control as u64;
             classes.ignore += c.ignore as u64;
             classes.unknown += c.unknown as u64;

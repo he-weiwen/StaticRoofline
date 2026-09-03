@@ -41,6 +41,7 @@ pub enum MeasureKind {
         kind: ArithKind,
     },
     SyncOps,
+    CommunicationOps,
     ControlOps,
     /// An instruction the classifier does not handle: counted by
     /// mnemonic, reported by name.
