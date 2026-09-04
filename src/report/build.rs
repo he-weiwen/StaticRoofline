@@ -677,28 +677,29 @@ impl<'a> KernelBuilder<'a> {
                     LoopId(i as u32),
                     RankEntry {
                         loop_name: name,
-                        weight: w.to_string(),
+                        instructions: w.to_string(),
                     },
                 )
             })
             .collect()
     }
 
-    /// Machine peak ratios at the deepest heaviest-chain loop whose
+    /// Machine peak ratios at the deepest loop, on the chain of the loop
+    /// with the most instructions, whose
     /// per-iteration AI(global) is defined — the altitude where both
     /// the flops and the global traffic of the steady state are
-    /// constants. Walks UP from the heaviest loop: an innermost loop
+    /// constants. Walks UP from that loop: an innermost loop
     /// that touches no global memory (k5's dot loop) defers to the
     /// tile loop above it.
     fn machine_peaks(
         &self,
-        heaviest: Option<LoopId>,
+        most_instructions: Option<LoopId>,
         arches: &[(String, crate::machine::Machine, &'static str)],
     ) -> (Vec<MachinePeak>, Option<String>) {
-        let Some(heaviest) = heaviest else {
+        let Some(most_instructions) = most_instructions else {
             return (Vec::new(), None);
         };
-        let mut cur = Some(heaviest);
+        let mut cur = Some(most_instructions);
         while let Some(l) = cur {
             let agg = self.aggregates(Some(l), None);
             if let Some(ai) = agg.ai_global {
@@ -956,7 +957,7 @@ impl<'a> KernelBuilder<'a> {
                 .collect(),
             shared_memory: self.shared_memory(),
             instruction_classes: classes,
-            heaviest_loop: ranking.first().map(|(_, r)| r.loop_name.clone()),
+            most_instructions_loop: ranking.first().map(|(_, r)| r.loop_name.clone()),
             machine_peaks,
             launch,
             totals_per_cta,

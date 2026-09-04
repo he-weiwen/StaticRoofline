@@ -64,11 +64,12 @@ pub struct KernelReport {
     /// (`flop + non_flop_arith + memory + sync + communication +
     /// control + ignore + unknown == total`) runs on these.
     pub instruction_classes: InstructionClasses,
-    /// The loop with the largest static weight (instructions × trips).
-    pub heaviest_loop: Option<String>,
+    /// The loop that executes the most instructions per kernel
+    /// invocation, by the static count (instructions × iterations).
+    pub most_instructions_loop: Option<String>,
     /// The flop/B a part sustains at peak (peak TFLOPS over DRAM
     /// GB/s), one per requested (or defaulted) architecture, for the
-    /// dominant flop bucket of the deepest heaviest-chain loop whose
+    /// dominant flop bucket of the deepest loop on that loop's chain whose
     /// per-iteration AI(global) is defined. A reference number next
     /// to that loop's requested AI — not a verdict: requested bytes
     /// are neither DRAM traffic (overfetch) nor a lower bound on it
@@ -82,7 +83,8 @@ pub struct KernelReport {
     /// when the block size is only a maximum).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub totals_per_cta: Option<Aggregates>,
-    /// Loops ranked by symbolic weight, heaviest first.
+    /// Loops ranked by instructions executed per invocation (a symbolic
+    /// expression), most first.
     pub ranking: Vec<RankEntry>,
     /// Top-level loop nodes, in program order.
     pub loops: Vec<LoopNode>,
@@ -164,8 +166,8 @@ pub struct LaunchInfo {
 pub struct RankEntry {
     #[serde(rename = "loop")]
     pub loop_name: String,
-    /// The weight expression: executed instructions per invocation.
-    pub weight: String,
+    /// Instructions executed per invocation: instructions × iterations.
+    pub instructions: String,
 }
 
 #[derive(Debug, Serialize)]

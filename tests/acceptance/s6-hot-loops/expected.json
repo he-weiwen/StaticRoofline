@@ -2,7 +2,7 @@
   "kernels": [
     {
       "name": "_Z15hgemm_coalescediiifPK6__halfS1_fPS_",
-      "heaviest_loop": "2_coalesced.cuh:14",
+      "most_instructions_loop": "2_coalesced.cuh:14",
       "ranking": [
         {"loop": "2_coalesced.cuh:14"},
         {"loop": "2_coalesced.cuh:14 (remainder)"}

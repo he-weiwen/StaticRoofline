@@ -1,5 +1,5 @@
 kernel void hgemm_double_buffer<128, 128, 16, 64, 64, 128>(
-heaviest loop (static weight): 12_double_buffer.cuh:114
+loop with the most instructions (static): 12_double_buffer.cuh:114
 machine @ sm_80 (A100-SXM4-40GB, from target-directive): f16 tensor peak 312 TFLOPS / 1555 GB/s DRAM = 200.6 flop/B; loop 12_double_buffer.cuh:114 AI(global) >= 64 flop/B
 shared memory [static]: 16384 B per CTA
 loop 12_double_buffer.cuh:114 ($L__BB0_5)

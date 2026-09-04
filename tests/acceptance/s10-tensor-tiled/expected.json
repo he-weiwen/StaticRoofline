@@ -2,7 +2,7 @@
   "kernels": [
     {
       "name": "_Z18hgemm_ldmatrix_mmaILi128ELi128ELi16ELi64ELi64ELi128ELi8ELi8EEviiifPK6__halfS2_fPS0_",
-      "heaviest_loop": "14_ldmatrix_mma.cuh:208",
+      "most_instructions_loop": "14_ldmatrix_mma.cuh:208",
       "instruction_classes": {"unknown": 0, "unparsed": 0},
       "machine_peaks": [
         {"arch": "sm_80", "loop": "14_ldmatrix_mma.cuh:208", "pipe": "tensor",

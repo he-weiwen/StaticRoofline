@@ -854,7 +854,8 @@ answer to "is the output overclaiming?")
   supportable. `machine_peaks` replaces `verdicts`: each entry carries the
   part's peak, its bandwidth and their quotient next to the loop's
   requested AI; the reader compares.
-- `hot_loop` → `heaviest_loop`, ranked and titled by static weight.
+- `hot_loop` → `most_instructions_loop`; the ranking is titled by what
+  it is, instructions executed per invocation (static).
 - `ai_global` is `{value, bound}` — exact, `at_least` (exact flops
   over bytes that are an upper bound) or `at_most`; a bound over a
   bound is not printed at all, and the text says why.

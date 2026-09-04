@@ -10,7 +10,7 @@ its peak over its DRAM bandwidth, with both numbers cited.
 ```text
 $ ptxroof analyze kernel.ptx
 kernel void hgemm_2d_blocktiling<64, 64, 8, 8, 8>(int, int, int, float, ...)
-  heaviest loop (static weight): 5_2d_blocktiling.cuh:39
+  loop with the most instructions (static): 5_2d_blocktiling.cuh:39
   machine @ sm_80 (A100-SXM4-40GB, from target-directive): f32 peak 19.5 TFLOPS
       / 1555 GB/s DRAM = 12.5 flop/B; loop 5_2d_blocktiling.cuh:39 AI(global) = 32 flop/B
   shared memory [static]: 2048 B per CTA

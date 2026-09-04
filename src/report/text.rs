@@ -40,8 +40,8 @@ pub fn render(report: &Report) -> String {
             .map(|p| format!("{}:{}", p.index, p.ty))
             .collect();
         let _ = writeln!(w, "  params: {}", params.join(" "));
-        if let Some(heaviest) = &k.heaviest_loop {
-            let _ = writeln!(w, "  heaviest loop (static weight): {heaviest}");
+        if let Some(most) = &k.most_instructions_loop {
+            let _ = writeln!(w, "  loop with the most instructions (static): {most}");
         }
         for mp in &k.machine_peaks {
             let unit = if mp.pipe == "cuda-core" {
@@ -89,14 +89,14 @@ pub fn render(report: &Report) -> String {
             );
         }
         if k.ranking.len() > 1 {
-            let _ = writeln!(w, "  loops by static weight:");
+            let _ = writeln!(w, "  loops by instructions executed (static):");
             for (i, r) in k.ranking.iter().enumerate() {
                 let _ = writeln!(
                     w,
                     "    {}. {}  ({} instructions)",
                     i + 1,
                     r.loop_name,
-                    r.weight
+                    r.instructions
                 );
             }
         }
