@@ -66,14 +66,15 @@ pub struct KernelReport {
     pub instruction_classes: InstructionClasses,
     /// The loop with the largest static weight (instructions × trips).
     pub heaviest_loop: Option<String>,
-    /// Roofline knees, one per requested (or defaulted) architecture,
-    /// for the dominant flop bucket of the deepest heaviest-chain loop
-    /// whose per-iteration AI(global) is defined. A reference number
-    /// next to that loop's requested AI — not a verdict: requested
-    /// bytes are neither DRAM traffic (overfetch) nor a lower bound on
-    /// it (cache reuse).
+    /// The flop/B a part sustains at peak (peak TFLOPS over DRAM
+    /// GB/s), one per requested (or defaulted) architecture, for the
+    /// dominant flop bucket of the deepest heaviest-chain loop whose
+    /// per-iteration AI(global) is defined. A reference number next
+    /// to that loop's requested AI — not a verdict: requested bytes
+    /// are neither DRAM traffic (overfetch) nor a lower bound on it
+    /// (cache reuse).
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub knees: Vec<Knee>,
+    pub machine_peaks: Vec<MachinePeak>,
     /// Launch configuration, when known (flag or PTX directive).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub launch: Option<LaunchInfo>,
@@ -118,25 +119,26 @@ pub struct InstructionClasses {
 }
 
 #[derive(Debug, Serialize)]
-pub struct Knee {
+pub struct MachinePeak {
     pub arch: String,
     /// The concrete part the machine table describes.
     pub machine: String,
     /// Where the table came from: "flag" or "target-directive".
     pub source: String,
-    /// The loop whose AI the knee is printed next to.
+    /// The loop whose AI the ratio is printed next to.
     #[serde(rename = "loop")]
     pub loop_name: String,
     /// Dominant flop bucket of that loop — pipe ("cuda-core",
-    /// "tensor", "sfu") and precision; the knee uses its peak.
+    /// "tensor", "sfu") and precision; the ratio uses its peak.
     pub pipe: String,
     pub precision: String,
     pub ai_global: Intensity,
-    /// `knee = peak_tflops * 1000 / dram_bw_gbps`, both cited in the
-    /// machine table.
+    /// `peak_flop_per_byte = peak_tflops * 1000 / dram_bw_gbps`, both
+    /// cited in the machine table: the AI above which this part is
+    /// limited by its peak rather than by DRAM.
     pub peak_tflops: f64,
     pub dram_bw_gbps: f64,
-    pub knee: f64,
+    pub peak_flop_per_byte: f64,
 }
 
 #[derive(Debug, Serialize)]

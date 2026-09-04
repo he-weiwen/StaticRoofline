@@ -43,24 +43,24 @@ pub fn render(report: &Report) -> String {
         if let Some(heaviest) = &k.heaviest_loop {
             let _ = writeln!(w, "  heaviest loop (static weight): {heaviest}");
         }
-        for kn in &k.knees {
-            let unit = if kn.pipe == "cuda-core" {
+        for mp in &k.machine_peaks {
+            let unit = if mp.pipe == "cuda-core" {
                 String::new()
             } else {
-                format!(" {}", kn.pipe)
+                format!(" {}", mp.pipe)
             };
             let _ = writeln!(
                 w,
-                "  knee @ {} ({}, from {}): {}{unit} {:.1} flop/B = {} TFLOPS / {} GB/s; loop {} AI(global) {} flop/B",
-                kn.arch,
-                kn.machine,
-                kn.source,
-                kn.precision,
-                kn.knee,
-                kn.peak_tflops,
-                kn.dram_bw_gbps,
-                kn.loop_name,
-                intensity(&kn.ai_global)
+                "  machine @ {} ({}, from {}): {}{unit} peak {} TFLOPS / {} GB/s DRAM = {:.1} flop/B; loop {} AI(global) {} flop/B",
+                mp.arch,
+                mp.machine,
+                mp.source,
+                mp.precision,
+                mp.peak_tflops,
+                mp.dram_bw_gbps,
+                mp.peak_flop_per_byte,
+                mp.loop_name,
+                intensity(&mp.ai_global)
             );
         }
         if let Some(l) = &k.launch {

@@ -1,9 +1,9 @@
-# S1.2 (PLAN.md §4): does the knee follow the part? The same kernel
+# S1.2 (PLAN.md §4): does the machine line follow the part? The same kernel
 # and configuration as S1, compiled at sm_89 (the PTX body is identical
 # to the sm_80 fixture; only .target differs — verified at generation).
-# No --arch flag: the knee defaults to the module's .target
+# No --arch flag: the machine table defaults to the module's .target
 # directive, the RTX 4090 table, and the S1 design point (AI 32) lands
-# on the other side of its 81.9 flop/B f32 knee: memory-bound, where
+# on the other side of its 81.9 flop/B f32 peak ratio: memory-bound, where
 # sm_80 said compute-bound.
 args = ["analyze", "{fixtures}/k5/k5.sm_89.ptx", "--json"]
 json = true

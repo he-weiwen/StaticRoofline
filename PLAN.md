@@ -346,7 +346,7 @@ S1.2 (the sm_89 fan-out) follows in PR 14.
 
 | ID | User question | Fixtures | Key assertions | Lands |
 |----|---------------|----------|----------------|-------|
-| S1.1 / S1.2 | Is this kernel's design point what I computed on paper? (and: does the knee follow the part?) | `k5` (= `tests/fixtures/src/5_2d_blocktiling.cuh`, BM=64 BN=64 BK=8 TM=8 TN=8) sm_80 + sm_89 PTX | nested loop tree w/ source lines; trips `ceildiv(K, 8)` (the latch is `setp.lt.u32`, so the general form is ceil-div); fully-unrolled register-tile loops recovered by line aggregation; per-iter flops/bytes; AI(global)=32.0; per-arch knees printed with their peak and bandwidth next to the loop's AI (32 flop/B: above the A100 f32 knee 12.5, below the RTX 3090's 38.0 — the reader compares; the tool no longer prints a compute/memory-bound label, see PR 30). S1.2: the same kernel at `.target sm_89`, no `--arch` flag — the knee defaults to the target directive (RTX 4090 table): f32 81.9 flop/B against AI 32 | PR 13 / PR 14 |
+| S1.1 / S1.2 | Is this kernel's design point what I computed on paper? (and: does the machine line follow the part?) | `k5` (= `tests/fixtures/src/5_2d_blocktiling.cuh`, BM=64 BN=64 BK=8 TM=8 TN=8) sm_80 + sm_89 PTX | nested loop tree w/ source lines; trips `ceildiv(K, 8)` (the latch is `setp.lt.u32`, so the general form is ceil-div); fully-unrolled register-tile loops recovered by line aggregation; per-iter flops/bytes; AI(global)=32.0; per-arch knees printed with their peak and bandwidth next to the loop's AI (32 flop/B: above the A100 f32 knee 12.5, below the RTX 3090's 38.0 — the reader compares; the tool no longer prints a compute/memory-bound label, see PR 30). S1.2: the same kernel at `.target sm_89`, no `--arch` flag — the knee defaults to the target directive (RTX 4090 table): f32 81.9 flop/B against AI 32 | PR 13 / PR 14 |
 | S6 | Where does the work go? | `k2` | loops ranked by symbolic weight: main loop `K`-dependent, remainder `K mod 4`; headline names the main loop's source line; unroll main+remainder pair linked as one logical loop (the bet-2 ranking claim, tested) | PR 12 |
 | S7.1 / S7.2 | Did tiling pay off? | `k1`, `k5` | two independent runs, no `diff` verb: AI(k1 main loop) = 0.5 flop/B vs AI(k5 tile loop) = 32 flop/B, both shape-independent (no `--bind`) — the contrast is two comparable numbers. (0.5, not the 0.25 the design table first guessed: 8 flops / 16 B per unrolled iteration under the same fma=2 convention that makes k5 = 32.) | PR 12 |
 | S8 | Am I on the precision path I think? | `k2` | flop table: f32 cuda-core only, **0 f16 flops** despite `__half` data (compute is converted to f32); 8 `cvt` per main-loop iteration counted as conversion overhead; 2 B loads ×8/iter; one guarded 2 B store in the epilogue (`at_most` — the bounds guard makes kernel totals upper bounds) | PR 12 |
@@ -851,7 +851,7 @@ answer to "is the output overclaiming?")
 - The compute/memory-bound verdict is gone. Requested bytes are
   neither DRAM traffic (overfetch) nor a lower bound on it (cache
   reuse — the README's RTX 4090 measurement), so no label is
-  supportable. `knees` replaces `verdicts`: each entry carries the
+  supportable. `machine_peaks` replaces `verdicts`: each entry carries the
   part's peak, its bandwidth and their quotient next to the loop's
   requested AI; the reader compares.
 - `hot_loop` → `heaviest_loop`, ranked and titled by static weight.
@@ -871,7 +871,7 @@ answer to "is the output overclaiming?")
   to the total. ★S10.2 pins k14's 101 per tile; the k5 text case
   pins its 128 two-byte shared loads per tile.
 - Expected outputs, README and this plan updated in the same series.
-  The S1 rows now assert the knee pair, not a label.
+  The S1 rows now assert the machine pair, not a label.
 
 ### Phase 2 — the demand-driven backlog
 
@@ -1086,7 +1086,7 @@ Phase 1:
 - [x] PR 15 — static shared memory per CTA (★S7.1/S7.2 assertions + `ptxas -v` cross-check)
 - [x] PR 16 — typed index arenas (`IndexVec`/`IdxRange`) + module-scope `.shared` decls
 - [x] PRs 17–29 — tensor-core / async / atomic / SFU families ★S10 (the first Phase 2 item)
-- [x] PR 30 — report only what the PTX can attest: knees not verdicts, bounded AI, instruction counts by kind
+- [x] PR 30 — report only what the PTX can attest: machine peak ratios not verdicts, bounded AI, instruction counts by kind
 
 Phase 2 (backlog — tick when triggered and executed):
 - [x] tensor/async/atomic/SFU families (+ k11/k12/k14/mma_demo fixtures) ★S10 — PRs 17–29

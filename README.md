@@ -4,15 +4,15 @@ Static roofline analysis for PTX kernels. Point it at a `.ptx` file
 (from nvcc, or any producer emitting standard PTX) and it reports, per
 loop, the steady-state flops, bytes, and arithmetic intensity — as
 *symbolic expressions* over the kernel's parameters, so the answer
-holds for every problem size — next to the roofline knee of a real
-part, with the peak and bandwidth it came from.
+holds for every problem size — next to what a real part can sustain,
+its peak over its DRAM bandwidth, with both numbers cited.
 
 ```text
 $ ptxroof analyze kernel.ptx
 kernel void hgemm_2d_blocktiling<64, 64, 8, 8, 8>(int, int, int, float, ...)
   heaviest loop (static weight): 5_2d_blocktiling.cuh:39
-  knee @ sm_80 (A100-SXM4-40GB, from target-directive): f32 12.5 flop/B
-      = 19.5 TFLOPS / 1555 GB/s; loop 5_2d_blocktiling.cuh:39 AI(global) 32 flop/B
+  machine @ sm_80 (A100-SXM4-40GB, from target-directive): f32 peak 19.5 TFLOPS
+      / 1555 GB/s DRAM = 12.5 flop/B; loop 5_2d_blocktiling.cuh:39 AI(global) = 32 flop/B
   shared memory [static]: 2048 B per CTA
   loop 5_2d_blocktiling.cuh:39 ($L__BB0_2)
     trips = ceildiv(param_2, 8)
@@ -39,7 +39,7 @@ cargo install --path .       # from this directory; needs stable Rust
 ptxroof analyze kernel.ptx                 # text report
 ptxroof analyze kernel.ptx --json          # the same result tree as JSON
 ptxroof analyze kernel.ptx --arch sm_80 --arch sm_86
-                                           # knees of chosen parts
+                                           # machine lines for chosen parts
 ptxroof analyze kernel.ptx --bind 2:K=4096 # numeric columns: bind kernel
                                            # param 2 (positional) to 4096
 ptxroof analyze kernel.ptx --launch 16,16,1  # per-CTA totals
@@ -65,9 +65,10 @@ shared memory and any launch-sized dynamic allocation (flagged
 `+ dynamic`) are not included — the dynamic amount is knowable only at
 launch.
 
-The knee line inherits this contract, which is why it is a reference
-number and not a verdict. The knee divides a part's peak by its DRAM
-bandwidth; the loop's AI divides flops by *requested* bytes. Comparing
+The machine line inherits this contract, which is why it is a reference
+number and not a verdict. It divides a part's peak by its DRAM
+bandwidth, the flop/B above which the part is limited by its peak
+rather than by memory; the loop's AI divides flops by *requested* bytes. Comparing
 the two assumes every requested byte is a DRAM byte exactly once, and
 that fails in both directions: uncoalesced access moves more, cache
 reuse moves less. The second failure was measured on hardware (RTX
@@ -90,9 +91,9 @@ their own line, and one `.rn` divide becomes many machine instructions.
 Flops are reported in three tables by the unit that runs them: `flops`
 (CUDA cores), `tensor flops` (`wmma.mma`, `mma.sync`) and `sfu flops`
 (`ex2`, `rsqrt`, `div.rn`, ... — one flop per result). AI(global)
-counts all three; the knee is taken from the peak of whichever bucket
+counts all three; the machine line uses the peak of whichever bucket
 dominates, so a tensor-core GEMM is shown against the part's tensor
-peak ("f16 tensor 200.6 flop/B = 312 TFLOPS / 1555 GB/s"), and every count is per
+peak ("f16 tensor peak 312 TFLOPS / 1555 GB/s DRAM = 200.6 flop/B"), and every count is per
 thread — a warp-collective instruction contributes its warp total
 divided by the 32 lanes. `cp.async` is recorded on both sides, a global
 read and a shared write. Every peak in `data/machine/*.toml` cites the

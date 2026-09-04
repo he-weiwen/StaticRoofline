@@ -684,17 +684,17 @@ impl<'a> KernelBuilder<'a> {
             .collect()
     }
 
-    /// Roofline knees at the deepest heaviest-chain loop whose
+    /// Machine peak ratios at the deepest heaviest-chain loop whose
     /// per-iteration AI(global) is defined — the altitude where both
     /// the flops and the global traffic of the steady state are
     /// constants. Walks UP from the heaviest loop: an innermost loop
     /// that touches no global memory (k5's dot loop) defers to the
     /// tile loop above it.
-    fn knees(
+    fn machine_peaks(
         &self,
         heaviest: Option<LoopId>,
         arches: &[(String, crate::machine::Machine, &'static str)],
-    ) -> (Vec<Knee>, Option<String>) {
+    ) -> (Vec<MachinePeak>, Option<String>) {
         let Some(heaviest) = heaviest else {
             return (Vec::new(), None);
         };
@@ -722,7 +722,7 @@ impl<'a> KernelBuilder<'a> {
                 let mut missing = None;
                 for (arch, machine, source) in arches {
                     match machine.peak_tflops(pipe, &precision) {
-                        Some(peak) => out.push(Knee {
+                        Some(peak) => out.push(MachinePeak {
                             arch: arch.clone(),
                             machine: machine.name.clone(),
                             source: (*source).to_owned(),
@@ -732,7 +732,7 @@ impl<'a> KernelBuilder<'a> {
                             ai_global: ai,
                             peak_tflops: peak,
                             dram_bw_gbps: machine.dram_bw_gbps,
-                            knee: peak * 1000.0 / machine.dram_bw_gbps,
+                            peak_flop_per_byte: peak * 1000.0 / machine.dram_bw_gbps,
                         }),
                         None => {
                             missing = Some(format!(
@@ -907,7 +907,8 @@ impl<'a> KernelBuilder<'a> {
             classes.unparsed += c.unparsed as u64;
         }
         let ranking = self.ranking();
-        let (knees, knee_hole) = self.knees(ranking.first().map(|(id, _)| *id), arches);
+        let (machine_peaks, peak_hole) =
+            self.machine_peaks(ranking.first().map(|(id, _)| *id), arches);
 
         // Launch config: explicit flag, else the PTX's own directives.
         let launch = launch_flag
@@ -927,13 +928,13 @@ impl<'a> KernelBuilder<'a> {
             unknowns.push(UnknownEntry {
                 what: format!("architecture {arch}"),
                 count: None,
-                reason: "no machine table — pass --arch with one of the known                          architectures for a knee"
+                reason: "no machine table — pass --arch with one of the known                          architectures for the machine peak"
                     .to_owned(),
             });
         }
-        if let Some(reason) = knee_hole {
+        if let Some(reason) = peak_hole {
             unknowns.push(UnknownEntry {
-                what: "knee".to_owned(),
+                what: "machine peak".to_owned(),
                 count: None,
                 reason,
             });
@@ -956,7 +957,7 @@ impl<'a> KernelBuilder<'a> {
             shared_memory: self.shared_memory(),
             instruction_classes: classes,
             heaviest_loop: ranking.first().map(|(_, r)| r.loop_name.clone()),
-            knees,
+            machine_peaks,
             launch,
             totals_per_cta,
             ranking: ranking.into_iter().map(|(_, r)| r).collect(),

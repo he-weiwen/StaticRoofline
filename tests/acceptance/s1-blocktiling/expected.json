@@ -23,13 +23,13 @@
           ]
         }
       ],
-      "knees": [
+      "machine_peaks": [
         {"arch": "sm_80", "loop": "5_2d_blocktiling.cuh:39", "pipe": "cuda-core",
          "precision": "f32", "ai_global": {"value": 32.0, "bound": "exact"}, "peak_tflops": 19.5,
-         "dram_bw_gbps": 1555.0, "knee": 12.540192926045016},
+         "dram_bw_gbps": 1555.0, "peak_flop_per_byte": 12.540192926045016},
         {"arch": "sm_86", "loop": "5_2d_blocktiling.cuh:39", "pipe": "cuda-core",
          "precision": "f32", "ai_global": {"value": 32.0, "bound": "exact"}, "peak_tflops": 35.58,
-         "dram_bw_gbps": 936.2, "knee": 38.0046998504593}
+         "dram_bw_gbps": 936.2, "peak_flop_per_byte": 38.0046998504593}
       ]
     }
   ]

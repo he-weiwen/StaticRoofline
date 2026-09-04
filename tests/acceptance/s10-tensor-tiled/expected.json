@@ -4,10 +4,10 @@
       "name": "_Z18hgemm_ldmatrix_mmaILi128ELi128ELi16ELi64ELi64ELi128ELi8ELi8EEviiifPK6__halfS2_fPS0_",
       "heaviest_loop": "14_ldmatrix_mma.cuh:208",
       "instruction_classes": {"unknown": 0, "unparsed": 0},
-      "knees": [
+      "machine_peaks": [
         {"arch": "sm_80", "loop": "14_ldmatrix_mma.cuh:208", "pipe": "tensor",
          "precision": "f16", "ai_global": {"value": 64.0, "bound": "at_least"}, "peak_tflops": 312.0,
-         "dram_bw_gbps": 1555.0, "knee": 200.64308681672026}
+         "dram_bw_gbps": 1555.0, "peak_flop_per_byte": 200.64308681672026}
       ],
       "loops": [
         {
