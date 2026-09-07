@@ -882,7 +882,13 @@ text): every basic block in program order with its label (or
 `<block N>` for an unlabelled fallthrough block), source line span,
 instruction count, successors, and the innermost loop it sits in with
 header/latch flagged — so every later reference to a block resolves
-to a line the reader has already seen. Invariant test: block counts
+to a line the reader has already seen. The text table carries a
+margin drawing every non-fallthrough edge as a vertical line between
+its rows, the `objdump --visualize-jumps` convention (`/` opens,
+`\` closes, `>` marks the target, `<->` is a self edge; shorter
+edges nearer the text, horizontals cross verticals): nesting and
+back edges are visible without reading the successors column.
+Invariant test: block counts
 sum to the kernel's instruction total, every successor and every loop
 header names a listed block, a latch branches to its header.
 
@@ -1100,7 +1106,7 @@ Phase 1:
 - [x] PR 16 — typed index arenas (`IndexVec`/`IdxRange`) + module-scope `.shared` decls
 - [x] PRs 17–29 — tensor-core / async / atomic / SFU families ★S10 (the first Phase 2 item)
 - [x] PR 30 — report only what the PTX can attest: machine peak ratios not verdicts, bounded AI, instruction counts by kind
-- [x] PR 31 — the block table (CFG) printed first, before loops are referred to by label
+- [x] PR 31 — the block table (CFG) printed first, with margin arrows, before loops are referred to by label
 
 Phase 2 (backlog — tick when triggered and executed):
 - [x] tensor/async/atomic/SFU families (+ k11/k12/k14/mma_demo fixtures) ★S10 — PRs 17–29

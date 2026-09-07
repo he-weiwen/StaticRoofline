@@ -132,11 +132,84 @@ pub fn render(report: &Report) -> String {
     out
 }
 
+/// One margin string per block row drawing every non-fallthrough edge
+/// as a vertical line between its two rows, `objdump
+/// --visualize-jumps` style: `/` opens the line on its top row, `\`
+/// closes it on the bottom row, `>` marks the target row, `<->` is a
+/// self edge. Shorter edges take the columns nearest the text; a
+/// horizontal overwrites any vertical it crosses.
+fn margins(blocks: &[BlockInfo]) -> Vec<String> {
+    let row: BTreeMap<&str, usize> = blocks
+        .iter()
+        .enumerate()
+        .map(|(i, b)| (b.name.as_str(), i))
+        .collect();
+    let row = &row;
+    let mut edges: Vec<(usize, usize)> = blocks
+        .iter()
+        .enumerate()
+        .flat_map(|(src, b)| b.successors.iter().map(move |s| (src, row[s.as_str()])))
+        .filter(|&(src, dst)| dst != src + 1)
+        .collect();
+    edges.sort_by_key(|&(src, dst)| src.abs_diff(dst));
+    let mut columns: Vec<Vec<(usize, usize)>> = Vec::new();
+    let mut placed: Vec<(usize, usize, usize)> = Vec::new();
+    for (src, dst) in edges {
+        let (lo, hi) = (src.min(dst), src.max(dst));
+        let free = |col: &Vec<(usize, usize)>| col.iter().all(|&(a, b)| hi < a || b < lo);
+        let col = columns.iter().position(free).unwrap_or_else(|| {
+            columns.push(Vec::new());
+            columns.len() - 1
+        });
+        columns[col].push((lo, hi));
+        placed.push((src, dst, col));
+    }
+    let width = columns.len() + 2;
+    let rank = |c: char| match c {
+        '/' | '\\' | '<' => 4,
+        '>' => 3,
+        '-' => 2,
+        '|' => 1,
+        _ => 0,
+    };
+    let mut rows = vec![vec![' '; width]; blocks.len()];
+    let mut put = |r: usize, x: usize, c: char| {
+        if rank(c) > rank(rows[r][x]) {
+            rows[r][x] = c;
+        }
+    };
+    for (src, dst, col) in placed {
+        let (lo, hi) = (src.min(dst), src.max(dst));
+        let x = columns.len() - 1 - col;
+        for r in lo..=hi {
+            let glyph = match (r == lo, r == hi) {
+                (true, true) => '<',
+                (true, false) => '/',
+                (false, true) => '\\',
+                (false, false) => '|',
+            };
+            put(r, x, glyph);
+            if glyph == '|' {
+                continue;
+            }
+            for i in x + 1..width {
+                put(r, i, '-');
+            }
+            if r == dst {
+                put(r, width - 1, '>');
+            }
+        }
+    }
+    rows.into_iter().map(String::from_iter).collect()
+}
+
 fn render_blocks(w: &mut String, blocks: &[BlockInfo]) {
     let _ = writeln!(
         w,
         "  blocks (program order; loops are named by their header block):"
     );
+    let margins = margins(blocks);
+    let blank = " ".repeat(margins.first().map_or(0, String::len));
     let header = ["block", "lines", "instrs", "successors", "loop"].map(String::from);
     let rows: Vec<[String; 5]> = blocks
         .iter()
@@ -173,9 +246,10 @@ fn render_blocks(w: &mut String, blocks: &[BlockInfo]) {
             .unwrap_or(0)
     };
     let widths = [width(0), width(1), width(2), width(3)];
-    for r in std::iter::once(&header).chain(&rows) {
+    let margin_of = std::iter::once(&blank).chain(&margins);
+    for (m, r) in margin_of.zip(std::iter::once(&header).chain(&rows)) {
         let line = format!(
-            "    {:<w0$}  {:<w1$}  {:>w2$}  {:<w3$}  {}",
+            "    {m}  {:<w0$}  {:<w1$}  {:>w2$}  {:<w3$}  {}",
             r[0],
             r[1],
             r[2],
@@ -340,5 +414,49 @@ fn render_aggregates(w: &mut String, a: &Aggregates, pad: &str) {
             .map(|(l, n)| format!("{l} x{n}"))
             .collect();
         let _ = writeln!(w, "{pad}unrolled source lines: {}", lines.join(", "));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn blocks(edges: &[&[usize]]) -> Vec<BlockInfo> {
+        edges
+            .iter()
+            .enumerate()
+            .map(|(i, succs)| BlockInfo {
+                name: format!("b{i}"),
+                lines: None,
+                instructions: 1,
+                successors: succs.iter().map(|s| format!("b{s}")).collect(),
+                r#loop: None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn fallthrough_only_draws_nothing() {
+        assert_eq!(margins(&blocks(&[&[1], &[2], &[]])), ["  ", "  ", "  "]);
+    }
+
+    #[test]
+    fn forward_skip_opens_at_the_source_and_points_at_the_target() {
+        let m = margins(&blocks(&[&[2, 1], &[2], &[]]));
+        assert_eq!(m, ["/--", "|  ", "\\->"]);
+    }
+
+    #[test]
+    fn back_edge_points_at_the_header_above_and_a_self_edge_is_one_row() {
+        let m = margins(&blocks(&[&[1], &[1, 2], &[2, 3], &[]]));
+        assert_eq!(m, ["   ", "<->", "<->", "   "]);
+        let m = margins(&blocks(&[&[1], &[2], &[1, 3], &[]]));
+        assert_eq!(m, ["   ", "/->", "\\--", "   "]);
+    }
+
+    #[test]
+    fn shorter_edges_sit_nearer_the_text_and_horizontals_cross_verticals() {
+        let m = margins(&blocks(&[&[4, 1], &[2], &[1, 3], &[5, 4], &[5], &[]]));
+        assert_eq!(m, ["/---", "|/->", "|\\--", "|/--", "\\-->", " \\->"]);
     }
 }

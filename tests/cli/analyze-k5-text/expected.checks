@@ -1,11 +1,13 @@
 kernel void hgemm_2d_blocktiling<64, 64, 8, 8, 8>(
 blocks (program order; loops are named by their header block):
 block      lines                       instrs  successors            loop
-$L__BB0_2  5_2d_blocktiling.cuh:17-48     155  $L__BB0_3             5_2d_blocktiling.cuh:39 (header)
-$L__BB0_3  5_2d_blocktiling.cuh:42-60     111  $L__BB0_3, <block 4>  5_2d_blocktiling.cuh:53 (header, latch)
-<block 4>  5_2d_blocktiling.cuh:39-62       8  $L__BB0_2, <block 5>  5_2d_blocktiling.cuh:39 (latch)
-$L__BB0_5  (no line info)                  64  $L__BB0_6
-$L__BB0_6  5_2d_blocktiling.cuh:13-72     412  (end)
+/----  <block 0>  5_2d_blocktiling.cuh:10-39      10  $L__BB0_5, <block 1>
+|/-->  $L__BB0_2  5_2d_blocktiling.cuh:17-48     155  $L__BB0_3             5_2d_blocktiling.cuh:39 (header)
+||<->  $L__BB0_3  5_2d_blocktiling.cuh:42-60     111  $L__BB0_3, <block 4>  5_2d_blocktiling.cuh:53 (header, latch)
+|\---  <block 4>  5_2d_blocktiling.cuh:39-62       8  $L__BB0_2, <block 5>  5_2d_blocktiling.cuh:39 (latch)
+| /--  <block 5>  5_2d_blocktiling.cuh:39          1  $L__BB0_6
+\--->  $L__BB0_5  (no line info)                  64  $L__BB0_6
+  \->  $L__BB0_6  5_2d_blocktiling.cuh:13-72     412  (end)
 loop with the most instructions (static): 5_2d_blocktiling.cuh:39
 shared memory [static]: 2048 B per CTA
 loop 5_2d_blocktiling.cuh:39 ($L__BB0_2)
