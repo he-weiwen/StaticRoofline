@@ -94,7 +94,7 @@ as PRs land.
    on them. Per-CTA/launch normalization of the per-thread counts is
    only coherent with blockDim in hand.
 
-**Audience boundary** (stated in README): the target is regular/tiled
+**Audience boundary**: the target is regular/tiled
 kernels — GEMM, conv, stencils, attention — from mainstream producers
 (nvcc, clang, Triton). Sparse/irregular kernels whose loop bounds are
 data-dependent (CSR SpMV being the canonical case) get honest, labeled

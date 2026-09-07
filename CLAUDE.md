@@ -16,8 +16,8 @@ either of these stale, and fold the update into the same commit:
   any Phase 2 item the commit starts, re-scopes, or retires.
 
 The same-commit rule is deliberate, matching the repo's existing
-convention (README's anti-scope list is edited in the same change that
-revisits an item): updating these in the commit that causes the drift
+convention (PLAN.md's anti-scope list is edited in the same change
+that revisits an item): updating these in the commit that causes the drift
 is what keeps them trustworthy. When the Phase 2 `capabilities` verb
 lands, the audit doc's tables become generated output and this
 instruction shrinks to covering the assessment sections only.
