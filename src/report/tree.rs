@@ -52,6 +52,10 @@ pub struct KernelReport {
     pub name: String,
     pub demangled: String,
     pub params: Vec<ParamInfo>,
+    /// The kernel's basic blocks in program order: the names every
+    /// loop below is referred to by, with where each block came from
+    /// and where control goes next.
+    pub blocks: Vec<BlockInfo>,
     /// Shared memory reserved per CTA. `static_bytes` is the sum of the
     /// kernel's `.shared` array declarations — a `[static]` demand
     /// figure that matches ptxas's `bytes smem` and Nsight Compute's
@@ -101,6 +105,30 @@ pub struct ParamInfo {
     #[serde(rename = "type")]
     pub ty: String,
     pub name: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BlockInfo {
+    /// The block's PTX label, or `<block N>` when it has none.
+    pub name: String,
+    /// Source lines the block's instructions carry, as
+    /// `file:first-last` in the block's first file; absent without
+    /// line info.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lines: Option<String>,
+    pub instructions: u64,
+    /// Successor block names; empty for a block that ends the kernel.
+    pub successors: Vec<String>,
+    /// The innermost loop containing the block, if any.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub r#loop: Option<BlockLoop>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BlockLoop {
+    pub name: String,
+    pub header: bool,
+    pub latch: bool,
 }
 
 #[derive(Debug, Serialize, Default, Clone, Copy)]

@@ -4,7 +4,11 @@
 //! 1. Every Measurement's provenance index resolves to a real
 //!    instruction.
 //! 2. Per-block class tallies sum to the kernel's instruction count.
-//! 3. Two-path consistency: with every parameter bound, the report's
+//! 3. The block table is the CFG: block instruction counts sum to the
+//!    kernel's instruction count, every successor and every loop
+//!    label names a listed block, and each loop's header and latches
+//!    are marked on exactly the blocks the loop forest says.
+//! 4. Two-path consistency: with every parameter bound, the report's
 //!    kernel flop total equals an independently-computed sum
 //!    (per-block flat tallies × numerically-evaluated trip chains) —
 //!    the check that catches two code paths disagreeing.
@@ -82,6 +86,61 @@ fn block_class_tallies_sum_to_kernel_instruction_count() {
                 .filter(|s| matches!(s, Stmt::Instr(_)))
                 .count() as u32;
             assert_eq!(from_blocks, from_stmts, "{fixture}");
+        }
+    }
+}
+
+#[test]
+fn block_table_matches_the_cfg() {
+    for fixture in FIXTURES {
+        let src = read(fixture);
+        let report = analyze(&src, fixture, &AnalyzeOptions::default()).expect("analyzes");
+        for k in &report.kernels {
+            let names: Vec<&str> = k.blocks.iter().map(|b| b.name.as_str()).collect();
+            let total: u64 = k.blocks.iter().map(|b| b.instructions).sum();
+            assert_eq!(total, k.instruction_classes.total, "{fixture} {}", k.name);
+            for b in &k.blocks {
+                for s in &b.successors {
+                    assert!(names.contains(&s.as_str()), "{fixture}: {} -> {s}", b.name);
+                }
+            }
+            fn walk<'a>(
+                nodes: &'a [ptxroof::report::tree::LoopNode],
+                out: &mut Vec<&'a ptxroof::report::tree::LoopNode>,
+            ) {
+                for n in nodes {
+                    out.push(n);
+                    walk(&n.loops, out);
+                }
+            }
+            let mut loops = Vec::new();
+            walk(&k.loops, &mut loops);
+            for l in loops {
+                let header: Vec<&str> = k
+                    .blocks
+                    .iter()
+                    .filter(|b| {
+                        b.r#loop
+                            .as_ref()
+                            .is_some_and(|bl| bl.name == l.name && bl.header)
+                    })
+                    .map(|b| b.name.as_str())
+                    .collect();
+                assert_eq!(
+                    header,
+                    [l.label.as_str()],
+                    "{fixture}: header of {}",
+                    l.name
+                );
+                assert!(
+                    k.blocks
+                        .iter()
+                        .any(|b| b.r#loop.as_ref().is_some_and(|bl| bl.latch)
+                            && b.successors.contains(&l.label)),
+                    "{fixture}: no latch branches to {}",
+                    l.label
+                );
+            }
         }
     }
 }

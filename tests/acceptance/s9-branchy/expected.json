@@ -2,11 +2,80 @@
   "kernels": [
     {
       "name": "micro_branchy",
-      "totals": {"flops": {"f32": {"at_most": true}}},
+      "blocks": [
+        {
+          "name": "<block 0>",
+          "successors": [
+            "$L__BB0_5",
+            "<block 1>"
+          ]
+        },
+        {
+          "name": "<block 1>",
+          "successors": [
+            "$L__BB0_2"
+          ]
+        },
+        {
+          "name": "$L__BB0_2",
+          "lines": "branchy.cu:5-6",
+          "instructions": 4,
+          "successors": [
+            "$L__BB0_4",
+            "<block 3>"
+          ],
+          "loop": {
+            "name": "branchy.cu:4",
+            "header": true,
+            "latch": false
+          }
+        },
+        {
+          "name": "<block 3>",
+          "lines": "branchy.cu:7",
+          "instructions": 1,
+          "loop": {
+            "name": "branchy.cu:4",
+            "header": false,
+            "latch": false
+          }
+        },
+        {
+          "name": "$L__BB0_4",
+          "lines": "branchy.cu:4-8",
+          "successors": [
+            "$L__BB0_2",
+            "$L__BB0_5"
+          ],
+          "loop": {
+            "name": "branchy.cu:4",
+            "header": false,
+            "latch": true
+          }
+        },
+        {
+          "name": "$L__BB0_5",
+          "successors": []
+        }
+      ],
+      "totals": {
+        "flops": {
+          "f32": {
+            "at_most": true
+          }
+        }
+      },
       "loops": [
         {
           "name": "branchy.cu:4",
-          "per_iteration": {"flops": {"f32": {"expr": "4", "at_most": true}}}
+          "per_iteration": {
+            "flops": {
+              "f32": {
+                "expr": "4",
+                "at_most": true
+              }
+            }
+          }
         }
       ]
     }

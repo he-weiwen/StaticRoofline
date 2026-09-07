@@ -16,12 +16,12 @@
 //! per-iteration numbers — the altitude where the verdict lives.
 
 use crate::cfg::loops::{LoopForest, LoopId};
-use crate::cfg::naming::{LoopName, demangle, loop_names};
+use crate::cfg::naming::{LoopName, basename, demangle, loop_names};
 use crate::cfg::{BlockId, Cfg, build_cfg, loop_forest};
 use crate::classify::{ArithKind, Direction, OpClass, Pipe, Precision, Space};
 use crate::core::measurement::MeasureKind;
 use crate::core::symexpr::SymExpr;
-use crate::core::{Kernel, Module, Stmt};
+use crate::core::{Instr, Kernel, Module, Stmt};
 use crate::parse::parser::{ParseError, parse};
 use crate::report::collect::{BlockMeasurements, CountQualifier, collect};
 use crate::report::tree::*;
@@ -419,6 +419,49 @@ impl<'a> KernelBuilder<'a> {
             cond_entry,
             display,
         }
+    }
+
+    fn blocks(&self) -> Vec<BlockInfo> {
+        let name = |b: BlockId| self.cfg.block_name(self.module, b);
+        (0..self.cfg.blocks.len() as u32)
+            .map(BlockId)
+            .map(|b| {
+                let instrs: Vec<&Instr> = self.cfg.instrs(self.kernel, b).collect();
+                let in_loop = self.forest.block_loop[b.0 as usize].map(|l| BlockLoop {
+                    name: self.display[l.0 as usize].clone(),
+                    header: self.forest.get(l).header == b,
+                    latch: self.forest.get(l).latches.contains(&b),
+                });
+                BlockInfo {
+                    name: name(b),
+                    lines: self.line_span(&instrs),
+                    instructions: instrs.len() as u64,
+                    successors: self.cfg.block(b).succs.iter().map(|&s| name(s)).collect(),
+                    r#loop: in_loop,
+                }
+            })
+            .collect()
+    }
+
+    fn line_span(&self, instrs: &[&Instr]) -> Option<String> {
+        let first = instrs.iter().filter_map(|i| i.loc).find(|l| l.line != 0)?;
+        let (lo, hi) = instrs
+            .iter()
+            .filter_map(|i| i.loc)
+            .filter(|l| l.file == first.file && l.line != 0)
+            .fold((first.line, first.line), |(lo, hi), l| {
+                (lo.min(l.line), hi.max(l.line))
+            });
+        let file = basename(
+            self.module
+                .file_path(first.file)
+                .unwrap_or("<unknown file>"),
+        );
+        Some(if lo == hi {
+            format!("{file}:{lo}")
+        } else {
+            format!("{file}:{lo}-{hi}")
+        })
     }
 
     /// Loop chain of a block, innermost first.
@@ -955,6 +998,7 @@ impl<'a> KernelBuilder<'a> {
                     name: self.module.interner.resolve(p.name).to_owned(),
                 })
                 .collect(),
+            blocks: self.blocks(),
             shared_memory: self.shared_memory(),
             instruction_classes: classes,
             most_instructions_loop: ranking.first().map(|(_, r)| r.loop_name.clone()),
