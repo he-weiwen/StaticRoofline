@@ -54,11 +54,7 @@ fn loop_name(
     id: LoopId,
 ) -> LoopName {
     let l = forest.get(id);
-    let label = cfg
-        .block(l.header)
-        .label
-        .map(|s| module.interner.resolve(s).to_owned())
-        .unwrap_or_else(|| format!("<block {}>", l.header.0));
+    let label = cfg.block_name(module, l.header);
 
     // 1. The back-edge branch's location (last instruction of a latch).
     let latch_branch_loc = l

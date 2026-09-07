@@ -56,6 +56,15 @@ impl Cfg {
     }
 
     /// Instructions of a block, in order.
+    /// The block's label, or `<block N>` when it has none (the entry
+    /// block and fallthrough blocks after a branch).
+    pub fn block_name(&self, module: &Module, id: BlockId) -> String {
+        self.block(id)
+            .label
+            .map(|s| module.interner.resolve(s).to_owned())
+            .unwrap_or_else(|| format!("<block {}>", id.0))
+    }
+
     pub fn instrs<'k>(&self, kernel: &'k Kernel, id: BlockId) -> impl Iterator<Item = &'k Instr> {
         let b = self.block(id);
         kernel.stmts[b.start..b.end].iter().filter_map(|s| match s {
@@ -264,6 +273,15 @@ mod tests {
             .iter()
             .map(|b| b.succs.iter().map(|s| s.0).collect())
             .collect()
+    }
+
+    #[test]
+    fn block_names_are_labels_or_synthesized_from_the_id() {
+        let (module, cfg) = cfg_of("@%p1 bra $L__A;\nadd.f32 %f1, %f1, %f1;\n$L__A:\nret;");
+        let names: Vec<String> = (0..cfg.blocks.len() as u32)
+            .map(|i| cfg.block_name(&module, BlockId(i)))
+            .collect();
+        assert_eq!(names, ["<block 0>", "<block 1>", "$L__A"]);
     }
 
     #[test]
