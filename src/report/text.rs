@@ -40,6 +40,7 @@ pub fn render(report: &Report) -> String {
             .map(|p| format!("{}:{}", p.index, p.ty))
             .collect();
         let _ = writeln!(w, "  params: {}", params.join(" "));
+        render_blocks(w, &k.blocks);
         if let Some(most) = &k.most_instructions_loop {
             let _ = writeln!(w, "  loop with the most instructions (static): {most}");
         }
@@ -133,6 +134,64 @@ pub fn render(report: &Report) -> String {
         let _ = writeln!(w, "coverage: {metric} {pct:.1}% ({}/{})", f.num, f.den);
     }
     out
+}
+
+fn render_blocks(w: &mut String, blocks: &[BlockInfo]) {
+    let _ = writeln!(
+        w,
+        "  blocks (program order; loops are named by their header block):"
+    );
+    let header = ["block", "lines", "instrs", "successors", "loop"].map(String::from);
+    let rows: Vec<[String; 5]> = blocks
+        .iter()
+        .map(|b| {
+            let role = b.r#loop.as_ref().map_or(String::new(), |l| {
+                let flags: Vec<&str> = [(l.header, "header"), (l.latch, "latch")]
+                    .into_iter()
+                    .filter_map(|(on, name)| on.then_some(name))
+                    .collect();
+                match flags.is_empty() {
+                    true => l.name.clone(),
+                    false => format!("{} ({})", l.name, flags.join(", ")),
+                }
+            });
+            [
+                b.name.clone(),
+                b.lines
+                    .clone()
+                    .unwrap_or_else(|| "(no line info)".to_owned()),
+                b.instructions.to_string(),
+                match b.successors.is_empty() {
+                    true => "(end)".to_owned(),
+                    false => b.successors.join(", "),
+                },
+                role,
+            ]
+        })
+        .collect();
+    let width = |col: usize| {
+        std::iter::once(&header)
+            .chain(&rows)
+            .map(|r| r[col].len())
+            .max()
+            .unwrap_or(0)
+    };
+    let widths = [width(0), width(1), width(2), width(3)];
+    for r in std::iter::once(&header).chain(&rows) {
+        let line = format!(
+            "    {:<w0$}  {:<w1$}  {:>w2$}  {:<w3$}  {}",
+            r[0],
+            r[1],
+            r[2],
+            r[3],
+            r[4],
+            w0 = widths[0],
+            w1 = widths[1],
+            w2 = widths[2],
+            w3 = widths[3],
+        );
+        let _ = writeln!(w, "{}", line.trim_end());
+    }
 }
 
 fn render_loop(w: &mut String, l: &LoopNode, depth: usize) {
