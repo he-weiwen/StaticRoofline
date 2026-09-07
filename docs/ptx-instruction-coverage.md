@@ -134,7 +134,7 @@ decision, not just an arm).
 | 9.7.3.5 | `mul` | `Flop` ×1 × lanes | OK. |
 | 9.7.3.6 | `fma` | `Flop` ×2 × lanes | OK — the standard 2-flops-per-FMA convention. |
 | 9.7.3.7 | `mad` | `Flop` ×2 | OK — FP `mad` is fused on all modern targets; identical to `fma` for counting. |
-| 9.7.3.8 | `div` | `Flop { Sfu, type, 1 × lanes }` | OK — SFU policy (misfit §D, decided): one flop per result on the `sfu` pipe, whatever the `.approx`/`.full`/`.rnd` form expands to in SASS; the machine tables carry no SFU peak, so an SFU-dominated loop reports its knee as a named unknown. |
+| 9.7.3.8 | `div` | `Flop { Sfu, type, 1 × lanes }` | OK — SFU policy (misfit §D, decided): one flop per result on the `sfu` pipe, whatever the `.approx`/`.full`/`.rnd` form expands to in SASS. |
 | 9.7.3.9 | `abs` | `Flop` ×1 | OK — with the cross-check caveat: the planned NCU measured-flops formula (`2·ffma + fmul + fadd`) excludes it, so abs-heavy kernels will show a static-vs-measured gap. Static side is defensible; document when NCU import lands. |
 | 9.7.3.10 | `neg` | `Flop` ×1 | OK — same caveat as `abs`. |
 | 9.7.3.11 | `min` | `Flop` ×1 | OK — same caveat. |
@@ -270,8 +270,7 @@ give the target class each should land as.
 
 New in recent ISA revisions (multi-node NVLink fabric). All are
 `Unknown` today via the `fabric` mnemonic — correct: cross-GPU
-transfers are a different roofline with different machine tables
-(misfit §F). All Tier 4.
+transfers are a different roofline (misfit §F). All Tier 4.
 
 | § | Instruction | Today | Verdict & recommendation |
 |---|---|---|---|
@@ -381,10 +380,8 @@ and CUTLASS emit these on H100).
 
 ## §9.7.17 TensorCore 5th Generation Family Instructions
 
-All `Unknown` today via the `tcgen05` mnemonic. Tier 2, additionally
-gated: `data/machine/` stops at sm_90, so there is no machine table to
-compare Blackwell flops against yet — classify-then-compare should
-land together with sm_100 machine tables. Two family-wide misfits:
+All `Unknown` today via the `tcgen05` mnemonic. Tier 2. Two
+family-wide misfits:
 **tensor memory** is a fifth memory space the `Space` enum doesn't
 have (§B/§C), and most operations are issued by a *single thread* on
 behalf of a CTA or CTA pair (§B) — per-thread multiplication would be
@@ -611,14 +608,13 @@ verified grammars already live in the backlog item.
 
 Same roofline materiality, gated on newer targets — **and on the
 scope-axis extension (misfit §B), which should land once, first, not
-per-family**. Blackwell entries additionally wait on sm_100 machine
-tables (`data/machine/` stops at sm_90).
+per-family**.
 
 - `wgmma.mma_async` (+ `.sp`), with `wgmma.fence` / `commit_group` / `wait_group` as `Sync`
 - TMA: `cp.async.bulk`, `cp.async.bulk.tensor`, `cp.reduce.async.bulk` (+ `.tensor`), `cp.async.bulk.prefetch` (+ `.tensor`), with `cp.async.bulk.commit_group` / `wait_group` as `Sync`; tensor variants land as honest unquantified bytes (misfit §C)
 - Hopper warp-specialization boilerplate: `elect.sync` (`Sync`, plus the `d|p` operand form in the parser), `setmaxnreg` (`Ignore`)
 - `red.async`, `movmatrix`, `mma.sp` (sparse policy, misfit §D), `st.async` remote-attribution review
-- `tcgen05.*` (all 14 entries) — tensor memory as a new `Space`, single-thread-issue scope, with sm_100 machine tables
+- `tcgen05.*` (all 14 entries) — tensor memory as a new `Space`, single-thread-issue scope
 
 ### Tier 3 — cheap correctness sweep (trigger: any PR touching classify.rs, or the first corpus sighting)
 

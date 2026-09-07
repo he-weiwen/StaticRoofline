@@ -5,19 +5,30 @@
       "loops": [
         {
           "name": "5_2d_blocktiling.cuh:39",
-          "trips": {"expr": "⌈param_2/8⌉"},
+          "trips": {
+            "expr": "\u2308param_2/8\u2309"
+          },
           "per_iteration": {
-            "flops": {"f32": {"expr": "1024", "at_most": false}},
-            "bytes": {"global": {"load": {"expr": "32", "at_most": false}}},
-            "ai_global": {"value": 32.0, "bound": "exact"}
+            "flops": {
+              "f32": {
+                "expr": "1024",
+                "at_most": false
+              }
+            },
+            "bytes": {
+              "global": {
+                "load": {
+                  "expr": "32",
+                  "at_most": false
+                }
+              }
+            },
+            "ai_global": {
+              "value": 32.0,
+              "bound": "exact"
+            }
           }
         }
-      ],
-      "machine_peaks": [
-        {"arch": "sm_89", "machine": "GeForce RTX 4090",
-         "source": "target-directive", "loop": "5_2d_blocktiling.cuh:39",
-         "pipe": "cuda-core", "precision": "f32", "ai_global": {"value": 32.0, "bound": "exact"},
-         "peak_tflops": 82.58, "dram_bw_gbps": 1008.0, "peak_flop_per_byte": 81.92460317460318}
       ]
     }
   ]

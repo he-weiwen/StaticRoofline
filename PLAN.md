@@ -89,9 +89,10 @@ as PRs land.
    Phase 1 ships only the requested column — *with* its `[static]`
    label, because the labeling is what keeps a lone static number
    honest; the SASS and NCU columns are Phase 2 items.
-4. **Launch config and architecture are inputs.** `--arch`, `--launch`,
-   `--bind` are required for numeric output; symbolic output never blocks
-   on them. Per-CTA/launch normalization of the per-thread counts is
+4. **Launch config and bindings are inputs.** `--launch` and `--bind`
+   are required for numeric output; symbolic output never blocks on
+   them. (`--arch` and the machine tables were removed in PR 32: the
+   PTX `.target` names a family, not a part, see anti-scope.) Per-CTA/launch normalization of the per-thread counts is
    only coherent with blockDim in hand.
 
 **Audience boundary**: the target is regular/tiled
@@ -118,6 +119,11 @@ item means editing this list in the same PR that implements it:
   counting;
 - `cvta`-provenance refinement of generic addressing — deferred until a
   fixture actually emits generic loads (none do today, verified).
+- machine peak / bandwidth ratios next to a loop's AI — removed in
+  PR 32. `.target sm_80` covers the A100 40GB (1555 GB/s), the A100
+  80GB (2039) and the A30 (933); the PTX does not determine the part,
+  so any printed ratio is a guess dressed as a fact. The reader has
+  the datasheet; the tool prints the AI.
 - by-value aggregate kernel parameters — a struct/array param lowered to
   `.param .align N .b8 name[size]`, whose scalar fields the body reads via
   `ld.param [name+offset]`. The param-table layout (size/align/field
@@ -346,7 +352,7 @@ S1.2 (the sm_89 fan-out) follows in PR 14.
 
 | ID | User question | Fixtures | Key assertions | Lands |
 |----|---------------|----------|----------------|-------|
-| S1.1 / S1.2 | Is this kernel's design point what I computed on paper? (and: does the machine line follow the part?) | `k5` (= `tests/fixtures/src/5_2d_blocktiling.cuh`, BM=64 BN=64 BK=8 TM=8 TN=8) sm_80 + sm_89 PTX | nested loop tree w/ source lines; trips `ceildiv(K, 8)` (the latch is `setp.lt.u32`, so the general form is ceil-div); fully-unrolled register-tile loops recovered by line aggregation; per-iter flops/bytes; AI(global)=32.0; per-arch knees printed with their peak and bandwidth next to the loop's AI (32 flop/B: above the A100 f32 knee 12.5, below the RTX 3090's 38.0 — the reader compares; the tool no longer prints a compute/memory-bound label, see PR 30). S1.2: the same kernel at `.target sm_89`, no `--arch` flag — the knee defaults to the target directive (RTX 4090 table): f32 81.9 flop/B against AI 32 | PR 13 / PR 14 |
+| S1.1 / S1.2 | Is this kernel's design point what I computed on paper? (and: do the counts depend on the target directive? — they must not) | `k5` (= `tests/fixtures/src/5_2d_blocktiling.cuh`, BM=64 BN=64 BK=8 TM=8 TN=8) sm_80 + sm_89 PTX | nested loop tree w/ source lines; trips `ceildiv(K, 8)` (the latch is `setp.lt.u32`, so the general form is ceil-div); fully-unrolled register-tile loops recovered by line aggregation; per-iter flops/bytes; AI(global)=32.0, exact. S1.2: the same kernel at `.target sm_89` reports the same numbers. (Through PR 31 these rows also asserted a machine peak ratio per architecture; PR 32 removed the machine model.) | PR 13 / PR 14 / PR 32 |
 | S6 | Where does the work go? | `k2` | loops ranked by symbolic weight: main loop `K`-dependent, remainder `K mod 4`; headline names the main loop's source line; unroll main+remainder pair linked as one logical loop (the bet-2 ranking claim, tested) | PR 12 |
 | S7.1 / S7.2 | Did tiling pay off? | `k1`, `k5` | two independent runs, no `diff` verb: AI(k1 main loop) = 0.5 flop/B vs AI(k5 tile loop) = 32 flop/B, both shape-independent (no `--bind`) — the contrast is two comparable numbers. (0.5, not the 0.25 the design table first guessed: 8 flops / 16 B per unrolled iteration under the same fma=2 convention that makes k5 = 32.) | PR 12 |
 | S8 | Am I on the precision path I think? | `k2` | flop table: f32 cuda-core only, **0 f16 flops** despite `__half` data (compute is converted to f32); 8 `cvt` per main-loop iteration counted as conversion overhead; 2 B loads ×8/iter; one guarded 2 B store in the epilogue (`at_most` — the bounds guard makes kernel totals upper bounds) | PR 12 |
@@ -411,9 +417,7 @@ tools/triton_fixture.py).
 │   │                        #   naming.rs (display names, demangling)
 │   ├── classify.rs          # instruction → semantic record (enum, exhaustive match)
 │   ├── trips.rs             # trip-count matcher + scalar affine tracer
-│   ├── machine.rs           # loader for data/machine/*.toml
 │   └── report/              # collect.rs, stats.rs, text.rs (JSON = Serialize)
-├── data/machine/            # per-SM peak/BW tables (TOML, sources cited inline)
 ├── tests/                   # cargo integration tests (*.rs) — and, as plain data:
 │   ├── run.py               # CLI test runner (T2 + T3)
 │   ├── fixtures/src/        # the CUDA kernel ladder (1_naive … 14_ldmatrix_mma .cuh)
@@ -901,6 +905,18 @@ Invariant test: block counts
 sum to the kernel's instruction total, every successor and every loop
 header names a listed block, a latch branches to its header.
 
+**PR 32 — No machine model.** The machine line (`sm_80 (A100-SXM4-40GB,
+from target-directive): f32 peak 19.5 TFLOPS / 1555 GB/s DRAM = 12.5
+flop/B`) rested on one hand-picked SKU per compute capability, and the
+PTX only names the capability: sm_80 is also the A100 80GB and the
+A30, sm_89 is also the L4 at 300 GB/s. Removed outright rather than
+hedged: `src/machine.rs`, `data/machine/*.toml`, the `toml`
+dependency, `--arch`, `machine_peaks` in the tree, and the
+"architecture" / "machine peak" unknowns. AI(global) stays; the reader
+compares it with the datasheet of the part they actually have. S1's
+rows now assert the design point alone, and S1.2 that the sm_89
+fixture reports the same counts. Anti-scope entry added.
+
 ### Phase 2 — the demand-driven backlog
 
 Nothing here is scheduled. An item starts only when its trigger fires;
@@ -1116,6 +1132,7 @@ Phase 1:
 - [x] PRs 17–29 — tensor-core / async / atomic / SFU families ★S10 (the first Phase 2 item)
 - [x] PR 30 — report only what the PTX can attest: machine peak ratios not verdicts, bounded AI, instruction counts by kind
 - [x] PR 31 — the block table (CFG) printed first, with margin arrows; instruction kinds sorted, with opcodes
+- [x] PR 32 — machine model removed (`--arch`, `data/machine/`, the machine line): the PTX names a family, not a part
 
 Phase 2 (backlog — tick when triggered and executed):
 - [x] tensor/async/atomic/SFU families (+ k11/k12/k14/mma_demo fixtures) ★S10 — PRs 17–29

@@ -40,26 +40,6 @@ pub fn render(report: &Report) -> String {
         if let Some(most) = &k.most_instructions_loop {
             let _ = writeln!(w, "  loop with the most instructions (static): {most}");
         }
-        for mp in &k.machine_peaks {
-            let unit = if mp.pipe == "cuda-core" {
-                String::new()
-            } else {
-                format!(" {}", mp.pipe)
-            };
-            let _ = writeln!(
-                w,
-                "  machine @ {} ({}, from {}): {}{unit} peak {} TFLOPS / {} GB/s DRAM = {:.1} flop/B; loop {} AI(global) {} flop/B",
-                mp.arch,
-                mp.machine,
-                mp.source,
-                mp.precision,
-                mp.peak_tflops,
-                mp.dram_bw_gbps,
-                mp.peak_flop_per_byte,
-                mp.loop_name,
-                intensity(&mp.ai_global)
-            );
-        }
         if let Some(l) = &k.launch {
             let (bound, note) = if l.exact {
                 ("", "")

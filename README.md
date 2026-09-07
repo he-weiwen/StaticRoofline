@@ -2,10 +2,9 @@
 
 Static roofline analysis for PTX kernels. Point it at a `.ptx` file
 (from nvcc, or any producer emitting standard PTX) and it reports, per
-loop, the steady-state flops, bytes, and arithmetic intensity — as
-*symbolic expressions* over the kernel's parameters, so the answer
-holds for every problem size — next to what a real part can sustain,
-its peak over its DRAM bandwidth, with both numbers cited.
+loop, the steady-state instructions, flops, bytes, and arithmetic
+intensity — as *symbolic expressions* over the kernel's parameters, so
+the answer holds for every problem size.
 
 ```text
 $ ptxroof analyze kernel.ptx
@@ -21,8 +20,6 @@ kernel void hgemm_2d_blocktiling<64, 64, 8, 8, 8>(int, int, int, float, ...)
     \--->  $L__BB0_5  (no line info)                  64  $L__BB0_6
       \->  $L__BB0_6  5_2d_blocktiling.cuh:13-72     412  (end)
   loop with the most instructions (static): 5_2d_blocktiling.cuh:39
-  machine @ sm_80 (A100-SXM4-40GB, from target-directive): f32 peak 19.5 TFLOPS
-      / 1555 GB/s DRAM = 12.5 flop/B; loop 5_2d_blocktiling.cuh:39 AI(global) = 32 flop/B
   shared memory [static]: 2048 B per CTA
   loop 5_2d_blocktiling.cuh:39 ($L__BB0_2)
     trips = ⌈param_2/8⌉
@@ -56,8 +53,6 @@ cargo install --path .       # from this directory; needs stable Rust
 ```sh
 ptxroof analyze kernel.ptx                 # text report
 ptxroof analyze kernel.ptx --json          # the same result tree as JSON
-ptxroof analyze kernel.ptx --arch sm_80 --arch sm_86
-                                           # machine lines for chosen parts
 ptxroof analyze kernel.ptx --bind 2:K=4096 # numeric columns: bind kernel
                                            # param 2 (positional) to 4096
 ptxroof analyze kernel.ptx --launch 16,16,1  # per-CTA totals
@@ -70,10 +65,10 @@ Generate PTX with `nvcc -ptx -lineinfo kernel.cu`; without
 Every count is static and per thread: what the PTX requests, not what
 the hardware moves (a warp-collective instruction contributes its warp
 total over the 32 lanes). `<=` marks an upper bound from a conditional
-path; whatever cannot be derived is reported as a named unknown. The
-machine line is a reference, not a verdict: requested bytes are not
-DRAM bytes, since cache reuse and uncoalesced access move the real
-figure in either direction. For measured traffic use Nsight Compute.
+path; whatever cannot be derived is reported as a named unknown.
+Requested bytes are not DRAM bytes, since cache reuse and uncoalesced
+access move the real figure in either direction; for measured traffic
+and for what a part sustains, use Nsight Compute.
 
 ## Development
 

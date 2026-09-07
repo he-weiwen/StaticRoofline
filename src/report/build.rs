@@ -34,8 +34,6 @@ pub enum AnalyzeError {
     Parse(#[from] ParseError),
     #[error("bad --bind: {0}")]
     Binding(String),
-    #[error("unknown architecture `{0}` — known: {1}")]
-    Arch(String, String),
 }
 
 /// One `--bind` argument: `name=value` or `idx:name=value`.
@@ -73,12 +71,10 @@ pub fn parse_bind(text: &str) -> Result<BindingSpec, String> {
 }
 
 /// Caller-supplied analysis inputs (bet 4: launch config and
-/// architecture are inputs, never guesses).
+/// bindings are inputs, never guesses).
 #[derive(Debug, Default)]
 pub struct AnalyzeOptions {
     pub bindings: Vec<BindingSpec>,
-    /// `--arch` values; empty = default to the module's `.target`.
-    pub arches: Vec<String>,
     /// `--launch x,y,z`; `None` = default to `.reqntid`/`.maxntid`
     /// when the kernel carries one.
     pub launch: Option<[u32; 3]>,
@@ -91,31 +87,6 @@ pub fn analyze(
 ) -> Result<Report, AnalyzeError> {
     let module = parse(source)?;
 
-    // Resolve architectures up front: explicit flags must name known
-    // tables (a usage error); the `.target` default degrades to a
-    // named unknown in the report instead.
-    let mut arches: Vec<(String, crate::machine::Machine, &'static str)> = Vec::new();
-    let mut arch_unknowns: Vec<String> = Vec::new();
-    if opts.arches.is_empty() {
-        let target = module.interner.resolve(module.target).to_owned();
-        match crate::machine::arch_table(&target) {
-            Some(m) => arches.push((target, m, "target-directive")),
-            None => arch_unknowns.push(target),
-        }
-    } else {
-        for a in &opts.arches {
-            match crate::machine::arch_table(a) {
-                Some(m) => arches.push((a.clone(), m, "flag")),
-                None => {
-                    return Err(AnalyzeError::Arch(
-                        a.clone(),
-                        crate::machine::known_archs().join(", "),
-                    ));
-                }
-            }
-        }
-    }
-
     let mut kernels = Vec::new();
     let mut classified = Fraction { num: 0, den: 0 };
     let mut trips_resolved = Fraction { num: 0, den: 0 };
@@ -123,11 +94,7 @@ pub fn analyze(
 
     for kernel in &module.kernels {
         let bind_map = resolve_bindings(&module, kernel, &opts.bindings, &mut bindings_echo)?;
-        let k = KernelBuilder::new(&module, kernel, &bind_map).build(
-            &arches,
-            &arch_unknowns,
-            opts.launch,
-        );
+        let k = KernelBuilder::new(&module, kernel, &bind_map).build(opts.launch);
         classified.num += k.instruction_classes.total - k.instruction_classes.unknown;
         classified.den += k.instruction_classes.total;
         let mut count_loops = |nodes: &[LoopNode]| {
@@ -739,75 +706,6 @@ impl<'a> KernelBuilder<'a> {
             .collect()
     }
 
-    /// Machine peak ratios at the deepest loop, on the chain of the loop
-    /// with the most instructions, whose
-    /// per-iteration AI(global) is defined — the altitude where both
-    /// the flops and the global traffic of the steady state are
-    /// constants. Walks UP from that loop: an innermost loop
-    /// that touches no global memory (k5's dot loop) defers to the
-    /// tile loop above it.
-    fn machine_peaks(
-        &self,
-        most_instructions: Option<LoopId>,
-        arches: &[(String, crate::machine::Machine, &'static str)],
-    ) -> (Vec<MachinePeak>, Option<String>) {
-        let Some(most_instructions) = most_instructions else {
-            return (Vec::new(), None);
-        };
-        let mut cur = Some(most_instructions);
-        while let Some(l) = cur {
-            let agg = self.aggregates(Some(l), None);
-            if let Some(ai) = agg.ai_global {
-                // Dominant flop bucket: the largest constant column of
-                // any pipe's table.
-                let tables = [
-                    (Pipe::CudaCore, &agg.flops),
-                    (Pipe::Tensor, &agg.tensor_flops),
-                    (Pipe::Sfu, &agg.sfu_flops),
-                ];
-                let (pipe, precision) = tables
-                    .iter()
-                    .flat_map(|(pipe, t)| t.iter().map(move |(k, v)| (*pipe, k, v)))
-                    .filter(|(_, k, _)| k.as_str() != "total")
-                    .filter_map(|(p, k, v)| v.expr.parse::<f64>().ok().map(|n| (p, k.clone(), n)))
-                    .filter(|(_, _, n)| *n > 0.0)
-                    .max_by(|a, b| a.2.total_cmp(&b.2))
-                    .map(|(p, k, _)| (p, k))
-                    .unwrap_or((Pipe::CudaCore, "f32".to_owned()));
-                let mut out = Vec::new();
-                let mut missing = None;
-                for (arch, machine, source) in arches {
-                    match machine.peak_tflops(pipe, &precision) {
-                        Some(peak) => out.push(MachinePeak {
-                            arch: arch.clone(),
-                            machine: machine.name.clone(),
-                            source: (*source).to_owned(),
-                            loop_name: self.display[l.0 as usize].clone(),
-                            pipe: pipe.key().to_owned(),
-                            precision: precision.clone(),
-                            ai_global: ai,
-                            peak_tflops: peak,
-                            dram_bw_gbps: machine.dram_bw_gbps,
-                            peak_flop_per_byte: peak * 1000.0 / machine.dram_bw_gbps,
-                        }),
-                        None => {
-                            missing = Some(format!(
-                                "machine table for {arch} has no {} {precision} peak",
-                                pipe.key()
-                            ));
-                        }
-                    }
-                }
-                return (out, missing);
-            }
-            cur = self.forest.get(l).parent;
-        }
-        (
-            Vec::new(),
-            Some("no loop on the hot chain has constant per-iteration AI(global)".to_owned()),
-        )
-    }
-
     fn unknowns(&self) -> Vec<UnknownEntry> {
         let mut out = Vec::new();
         let mut unknown_ops: BTreeMap<String, u64> = BTreeMap::new();
@@ -941,12 +839,7 @@ impl<'a> KernelBuilder<'a> {
         }
     }
 
-    fn build(
-        self,
-        arches: &[(String, crate::machine::Machine, &'static str)],
-        arch_unknowns: &[String],
-        launch_flag: Option<[u32; 3]>,
-    ) -> KernelReport {
+    fn build(self, launch_flag: Option<[u32; 3]>) -> KernelReport {
         let name = self.module.interner.resolve(self.kernel.name).to_owned();
         let mut classes = InstructionClasses::default();
         for bm in &self.blocks {
@@ -963,8 +856,6 @@ impl<'a> KernelBuilder<'a> {
             classes.unparsed += c.unparsed as u64;
         }
         let ranking = self.ranking();
-        let (machine_peaks, peak_hole) =
-            self.machine_peaks(ranking.first().map(|(id, _)| *id), arches);
 
         // Launch config: explicit flag, else the PTX's own directives.
         let launch = launch_flag
@@ -979,22 +870,7 @@ impl<'a> KernelBuilder<'a> {
             });
         let totals_per_cta = launch.as_ref().map(|l| self.aggregates(None, Some(l)));
 
-        let mut unknowns = self.unknowns();
-        for arch in arch_unknowns {
-            unknowns.push(UnknownEntry {
-                what: format!("architecture {arch}"),
-                count: None,
-                reason: "no machine table — pass --arch with one of the known                          architectures for the machine peak"
-                    .to_owned(),
-            });
-        }
-        if let Some(reason) = peak_hole {
-            unknowns.push(UnknownEntry {
-                what: "machine peak".to_owned(),
-                count: None,
-                reason,
-            });
-        }
+        let unknowns = self.unknowns();
 
         KernelReport {
             demangled: demangle(&name),
@@ -1014,7 +890,6 @@ impl<'a> KernelBuilder<'a> {
             shared_memory: self.shared_memory(),
             instruction_classes: classes,
             most_instructions_loop: ranking.first().map(|(_, r)| r.loop_name.clone()),
-            machine_peaks,
             launch,
             totals_per_cta,
             ranking: ranking.into_iter().map(|(_, r)| r).collect(),

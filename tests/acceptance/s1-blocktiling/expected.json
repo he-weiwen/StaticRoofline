@@ -5,31 +5,49 @@
       "loops": [
         {
           "name": "5_2d_blocktiling.cuh:39",
-          "trips": {"expr": "⌈param_2/8⌉"},
+          "trips": {
+            "expr": "\u2308param_2/8\u2309"
+          },
           "per_iteration": {
-            "flops": {"f32": {"expr": "1024", "at_most": false}},
-            "bytes": {"global": {"load": {"expr": "32", "at_most": false}}},
-            "ai_global": {"value": 32.0, "bound": "exact"}
+            "flops": {
+              "f32": {
+                "expr": "1024",
+                "at_most": false
+              }
+            },
+            "bytes": {
+              "global": {
+                "load": {
+                  "expr": "32",
+                  "at_most": false
+                }
+              }
+            },
+            "ai_global": {
+              "value": 32.0,
+              "bound": "exact"
+            }
           },
           "loops": [
             {
               "name": "5_2d_blocktiling.cuh:53",
-              "trips": {"expr": "8"},
+              "trips": {
+                "expr": "8"
+              },
               "per_iteration": {
-                "flops": {"f32": {"expr": "128", "at_most": false}},
-                "unrolled_source_lines": {"5_2d_blocktiling.cuh:55": 8}
+                "flops": {
+                  "f32": {
+                    "expr": "128",
+                    "at_most": false
+                  }
+                },
+                "unrolled_source_lines": {
+                  "5_2d_blocktiling.cuh:55": 8
+                }
               }
             }
           ]
         }
-      ],
-      "machine_peaks": [
-        {"arch": "sm_80", "loop": "5_2d_blocktiling.cuh:39", "pipe": "cuda-core",
-         "precision": "f32", "ai_global": {"value": 32.0, "bound": "exact"}, "peak_tflops": 19.5,
-         "dram_bw_gbps": 1555.0, "peak_flop_per_byte": 12.540192926045016},
-        {"arch": "sm_86", "loop": "5_2d_blocktiling.cuh:39", "pipe": "cuda-core",
-         "precision": "f32", "ai_global": {"value": 32.0, "bound": "exact"}, "peak_tflops": 35.58,
-         "dram_bw_gbps": 936.2, "peak_flop_per_byte": 38.0046998504593}
       ]
     }
   ]

@@ -10,7 +10,6 @@
 pub mod cfg;
 pub mod classify;
 pub mod core;
-pub mod machine;
 pub mod parse;
 pub mod report;
 pub mod trips;

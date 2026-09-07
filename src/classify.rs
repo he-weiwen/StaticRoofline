@@ -58,8 +58,8 @@ impl Precision {
     }
 }
 
-/// The execution unit a flop runs on; each has its own peak in the
-/// machine tables, so each gets its own flop table in the report.
+/// The execution unit a flop runs on; each gets its own flop table
+/// in the report.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Pipe {
     CudaCore,

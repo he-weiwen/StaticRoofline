@@ -40,10 +40,6 @@ enum Command {
         /// `name=value` or `idx:name=value` (params are positional)
         #[arg(long)]
         bind: Vec<String>,
-        /// Architecture(s) for roofline verdicts (repeatable);
-        /// defaults to the module's .target directive
-        #[arg(long)]
-        arch: Vec<String>,
         /// Launch block dimensions `x,y,z` for per-CTA totals;
         /// defaults to .reqntid/.maxntid when the kernel carries one
         #[arg(long)]
@@ -70,7 +66,6 @@ fn run() -> anyhow::Result<ExitCode> {
         input,
         json,
         bind,
-        arch,
         launch,
         dump_ast,
     } = cli.command;
@@ -93,11 +88,7 @@ fn run() -> anyhow::Result<ExitCode> {
         .map(|s| parse_launch(&s))
         .transpose()
         .map_err(anyhow::Error::msg)?;
-    let opts = ptxroof::report::AnalyzeOptions {
-        bindings,
-        arches: arch,
-        launch,
-    };
+    let opts = ptxroof::report::AnalyzeOptions { bindings, launch };
     let report = ptxroof::report::analyze(&source, &input.display().to_string(), &opts)
         .with_context(|| format!("analyzing {}", input.display()))?;
 
