@@ -895,6 +895,8 @@ titles asserted which instructions were "workload" and which
 per tile compete for the same issue slots as its 512 FMAs. Kinds now
 print as one sorted column, and each kind lists its opcodes as PTX
 spells them (`by_kind.*.opcodes` in JSON, checked to sum to the kind).
+Ceil-division prints as `⌈param_2/8⌉` instead of `ceildiv(param_2, 8)`
+in both views.
 Invariant test: block counts
 sum to the kernel's instruction total, every successor and every loop
 header names a listed block, a latch branches to its header.

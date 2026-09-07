@@ -53,7 +53,7 @@ fn ladder_trip_counts_are_pinned() {
 
     // k5: outer tile loop ceildiv(K, 8); inner dot loop a constant 8.
     let (trips, info) = info_of("k5/k5.sm_80.ptx");
-    assert_eq!(trips, ["ok: ceildiv(param_2, 8)", "ok: 8"]);
+    assert_eq!(trips, ["ok: ⌈param_2/8⌉", "ok: 8"]);
     assert!(info.unroll_pairs.is_empty(), "different lines, no pair");
 }
 

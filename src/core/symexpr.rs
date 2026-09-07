@@ -21,8 +21,9 @@
 //! Printing is deterministic and matches the convention pinned in the
 //! committed scenario expectations: `param_2 mod 4` binds tighter than
 //! `+`/`-`, exact division prints as `(...) / c`, ceil-division prints
-//! function-style `ceildiv(x, c)`, products parenthesize sums and
-//! divisions, and a `-c·x` summand prints as `- c * x`.
+//! `⌈x/c⌉` (a sum or product numerator parenthesized), products
+//! parenthesize sums and divisions, and a `-c·x` summand prints as
+//! `- c * x`.
 
 use std::collections::HashMap;
 use std::fmt;
@@ -38,7 +39,7 @@ pub enum SymExpr {
     /// n-ary product; invariant: ≥ 2 factors, no nested `Prod`,
     /// constants folded into one leading factor while they fit.
     Prod(Vec<SymExpr>),
-    /// `ceildiv(e, c)`, c > 0.
+    /// `⌈e/c⌉`, c > 0.
     CeilDiv(Box<SymExpr>, i64),
     /// `e / c` rounding toward −∞, c > 0. The matcher only emits this
     /// when divisibility holds by construction.
@@ -167,7 +168,7 @@ impl SymExpr {
         }
     }
 
-    /// `ceildiv(e, c)`; `c` must be positive (matcher-supplied).
+    /// `⌈e/c⌉`; `c` must be positive (matcher-supplied).
     pub fn ceil_div(e: SymExpr, c: i64) -> SymExpr {
         assert!(c > 0, "ceil_div by non-positive constant is a matcher bug");
         if c == 1 {
@@ -335,7 +336,7 @@ fn render(e: &SymExpr, ctx: Ctx) -> String {
                 .collect::<Vec<_>>()
                 .join(" * "),
         },
-        SymExpr::CeilDiv(e, c) => format!("ceildiv({}, {c})", render(e, Ctx::Top)),
+        SymExpr::CeilDiv(e, c) => format!("⌈{}/{c}⌉", render(e, Ctx::DivOrModLeft)),
         SymExpr::FloorDiv(e, c) => format!("{} / {c}", render(e, Ctx::DivOrModLeft)),
         SymExpr::Mod(e, c) => format!("{} mod {c}", render(e, Ctx::DivOrModLeft)),
     };
@@ -411,7 +412,9 @@ mod tests {
     #[test]
     fn k5_outer_trip_shape() {
         let trips = E::ceil_div(k(), 8);
-        assert_eq!(trips.to_string(), "ceildiv(param_2, 8)");
+        assert_eq!(trips.to_string(), "⌈param_2/8⌉");
+        let shifted = E::ceil_div(E::add(k(), E::Const(1)), 8);
+        assert_eq!(shifted.to_string(), "⌈(param_2 + 1)/8⌉");
         assert_eq!(trips.bind(&bindings(&[("param_2", 4096)])), E::Const(512));
         assert_eq!(trips.bind(&bindings(&[("param_2", 4097)])), E::Const(513));
         assert_eq!(trips.bind(&bindings(&[("param_2", 0)])), E::Const(0));
@@ -478,7 +481,7 @@ mod tests {
         assert_eq!(nested.to_string(), "(param_2 mod 8) / 2");
         // Division result feeding a product gets parenthesized.
         let p = E::mul(E::Const(2), E::ceil_div(k(), 8));
-        assert_eq!(p.to_string(), "2 * ceildiv(param_2, 8)");
+        assert_eq!(p.to_string(), "2 * ⌈param_2/8⌉");
     }
 
     #[test]

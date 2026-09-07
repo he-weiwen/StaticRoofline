@@ -25,7 +25,7 @@ kernel void hgemm_2d_blocktiling<64, 64, 8, 8, 8>(int, int, int, float, ...)
       / 1555 GB/s DRAM = 12.5 flop/B; loop 5_2d_blocktiling.cuh:39 AI(global) = 32 flop/B
   shared memory [static]: 2048 B per CTA
   loop 5_2d_blocktiling.cuh:39 ($L__BB0_2)
-    trips = ceildiv(param_2, 8)
+    trips = ⌈param_2/8⌉
     per iteration:
       instructions = 1051
         cuda-core f32       512

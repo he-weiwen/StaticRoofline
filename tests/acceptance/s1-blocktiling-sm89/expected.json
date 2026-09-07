@@ -5,7 +5,7 @@
       "loops": [
         {
           "name": "5_2d_blocktiling.cuh:39",
-          "trips": {"expr": "ceildiv(param_2, 8)"},
+          "trips": {"expr": "⌈param_2/8⌉"},
           "per_iteration": {
             "flops": {"f32": {"expr": "1024", "at_most": false}},
             "bytes": {"global": {"load": {"expr": "32", "at_most": false}}},

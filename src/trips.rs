@@ -799,10 +799,7 @@ mod tests {
              setp.lt.u32 %p1, %r2, %r1;\n@%p1 bra $L__L;\nret;",
         );
         let trips = trips_of(&src);
-        assert_eq!(
-            trips[0].1.as_ref().unwrap().to_string(),
-            "ceildiv(param_0, 8)"
-        );
+        assert_eq!(trips[0].1.as_ref().unwrap().to_string(), "⌈param_0/8⌉");
     }
 
     #[test]
