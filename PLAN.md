@@ -861,9 +861,10 @@ answer to "is the output overclaiming?")
   bound is not printed at all, and the text says why.
 - `.maxntid` is a maximum: `launch.exact` is false there and every
   per-CTA total becomes an upper bound.
-- One contract line at the top of the text report: static, per
+- ~~One contract line at the top of the text report: static, per
   thread, as requested, not measured, not what the memory system
-  moves.
+  moves.~~ Removed in PR 31: the `[static]` section labels already
+  say it, and the line was noise on every run.
 - `Communication` (shfl/vote/match/redux/elect) split out of `Sync`.
 - Per-iteration instruction counts by kind (`instructions` on every
   aggregate; memory kinds carry the access width; predicated

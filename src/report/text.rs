@@ -15,10 +15,6 @@ pub fn render(report: &Report) -> String {
     let mut out = String::new();
     let w = &mut out;
     let _ = writeln!(w, "ptxroof analyze [static] — {}", report.input);
-    let _ = writeln!(
-        w,
-        "counts are static, per thread, as requested by the PTX: not measured, and not what the memory system moves"
-    );
     if !report.bindings.is_empty() {
         let binds: Vec<String> = report
             .bindings
