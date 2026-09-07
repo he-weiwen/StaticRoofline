@@ -868,9 +868,10 @@ answer to "is the output overclaiming?")
 - `Communication` (shfl/vote/match/redux/elect) split out of `Sync`.
 - Per-iteration instruction counts by kind (`instructions` on every
   aggregate; memory kinds carry the access width; predicated
-  instructions count in full; register moves on their own line as
-  the PTX-not-SASS caveat), with a runner identity that the rows sum
-  to the total. ★S10.2 pins k14's 101 per tile; the k5 text case
+  instructions count in full; ~~register moves on their own line as
+  the PTX-not-SASS caveat~~ — the workload / bookkeeping / register
+  move grouping was a judgment and went in PR 31), with a runner
+  identity that the rows sum to the total. ★S10.2 pins k14's 101 per tile; the k5 text case
   pins its 128 two-byte shared loads per tile.
 - Expected outputs, README and this plan updated in the same series.
   The S1 rows now assert the machine pair, not a label.
@@ -888,6 +889,12 @@ its rows, the `objdump --visualize-jumps` convention (`/` opens,
 `\` closes, `>` marks the target, `<->` is a self edge; shorter
 edges nearer the text, horizontals cross verticals): nesting and
 back edges are visible without reading the successors column.
+Instruction tables lost their group titles in the same series: the
+titles asserted which instructions were "workload" and which
+"bookkeeping", and k5's 212 integer and 128 conversion instructions
+per tile compete for the same issue slots as its 512 FMAs. Kinds now
+print as one sorted column, and each kind lists its opcodes as PTX
+spells them (`by_kind.*.opcodes` in JSON, checked to sum to the kind).
 Invariant test: block counts
 sum to the kernel's instruction total, every successor and every loop
 header names a listed block, a latch branches to its header.
@@ -1106,7 +1113,7 @@ Phase 1:
 - [x] PR 16 — typed index arenas (`IndexVec`/`IdxRange`) + module-scope `.shared` decls
 - [x] PRs 17–29 — tensor-core / async / atomic / SFU families ★S10 (the first Phase 2 item)
 - [x] PR 30 — report only what the PTX can attest: machine peak ratios not verdicts, bounded AI, instruction counts by kind
-- [x] PR 31 — the block table (CFG) printed first, with margin arrows, before loops are referred to by label
+- [x] PR 31 — the block table (CFG) printed first, with margin arrows; instruction kinds sorted, with opcodes
 
 Phase 2 (backlog — tick when triggered and executed):
 - [x] tensor/async/atomic/SFU families (+ k11/k12/k14/mma_demo fixtures) ★S10 — PRs 17–29

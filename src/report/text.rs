@@ -330,50 +330,43 @@ fn render_flops(w: &mut String, pad: &str, label: &str, table: &BTreeMap<String,
     );
 }
 
-fn instruction_group(kind: &str) -> (u8, &'static str) {
-    let workload = [
-        "tensor ",
-        "cuda-core ",
-        "sfu ",
-        " load ",
-        " store ",
-        " copy ",
-        " atomic ",
-    ];
-    if workload
-        .iter()
-        .any(|w| kind.starts_with(w) || kind.contains(w))
-    {
-        (0, "workload")
-    } else if kind == "warp communication" {
-        (1, "warp communication")
-    } else if kind == "register move" {
-        (3, "register moves (mostly removed by ptxas)")
-    } else if kind == "hint / no-op" || kind == "unknown" {
-        (4, "other")
-    } else {
-        (2, "bookkeeping")
-    }
-}
-
+/// Kinds in descending count, opcodes beneath each kind likewise:
+/// counts that grow with a parameter first, by leading coefficient,
+/// then constants by value.
 fn render_instructions(w: &mut String, pad: &str, i: &InstructionCounts) {
     if i.total.expr == "0" {
         return;
     }
     let _ = writeln!(w, "{pad}instructions = {}", count(&i.total));
-    let mut groups: BTreeMap<u8, (&str, Vec<String>)> = BTreeMap::new();
-    for (kind, n) in &i.by_kind {
-        let (order, title) = instruction_group(kind);
-        let entry = groups.entry(order).or_insert((title, Vec::new()));
-        entry.1.push(if matches!(order, 1 | 3) {
-            count(&n.total)
-        } else {
-            format!("{kind} {}", count(&n.total))
-        });
+    let by_count = |a: &Count, b: &Count| rank(&b.expr).cmp(&rank(&a.expr));
+    let mut rows: Vec<(String, String)> = Vec::new();
+    let mut kinds: Vec<_> = i.by_kind.iter().collect();
+    kinds.sort_by(|a, b| by_count(&a.1.total, &b.1.total));
+    for (kind, k) in kinds {
+        rows.push((kind.clone(), count(&k.total)));
+        let mut opcodes: Vec<_> = k.opcodes.iter().collect();
+        opcodes.sort_by(|a, b| by_count(a.1, b.1));
+        rows.extend(
+            opcodes
+                .into_iter()
+                .map(|(o, n)| (format!("  {o}"), count(n))),
+        );
     }
-    for (title, rows) in groups.values() {
-        let _ = writeln!(w, "{pad}  {title}: {}", rows.join(", "));
+    let name_width = rows.iter().map(|(n, _)| n.len()).max().unwrap_or(0);
+    let count_width = rows.iter().map(|(_, c)| c.len()).max().unwrap_or(0);
+    for (name, c) in rows {
+        let _ = writeln!(w, "{pad}  {name:<name_width$}  {c:>count_width$}");
     }
+}
+
+/// (grows with a parameter, coefficient of the first term): the number
+/// the expression starts with, or 1 when it starts with a symbol.
+fn rank(expr: &str) -> (bool, i64) {
+    let digits: String = expr.chars().take_while(char::is_ascii_digit).collect();
+    (
+        expr.contains(char::is_alphabetic),
+        digits.parse().unwrap_or(1),
+    )
 }
 
 fn render_aggregates(w: &mut String, a: &Aggregates, pad: &str) {

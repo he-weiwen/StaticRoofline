@@ -28,9 +28,17 @@ kernel void hgemm_2d_blocktiling<64, 64, 8, 8, 8>(int, int, int, float, ...)
     trips = ceildiv(param_2, 8)
     per iteration:
       instructions = 1051
-        workload: cuda-core f32 512, global load 2 B 16, shared load 2 B 128, shared store 2 B 16
-        bookkeeping: compare / select 9, control 9, conversion 128, integer arithmetic 212, synchronization 2
-        register moves (mostly removed by ptxas): 19
+        cuda-core f32       512
+          fma.rn.f32        512
+        integer arithmetic  212
+          add.s32            70
+          shl.b32            49
+          ...
+        conversion          128
+          cvt.f32.f16       128
+        shared load 2 B     128
+          ld.shared.u16     128
+        ...
       flops = 1024  (f32 1024)
       global bytes: load 32 B, store 0 B
       AI(global) = 32 flop/B
@@ -91,12 +99,13 @@ side is this tool's half of the story; what the memory hierarchy does
 with the demand is Nsight Compute's.
 
 Every loop also lists the instructions it issues per iteration, by
-kind, with memory kinds carrying their access width. That is a static
-proxy for issue pressure (a warp scheduler issues one instruction per
-cycle) and the cheapest coalescing signal there is (128 two-byte
-shared loads per tile is a finding). They are PTX counts, not SASS:
-register moves are mostly removed by ptxas, which is why they sit on
-their own line, and one `.rn` divide becomes many machine instructions.
+kind in descending count and by opcode within each kind, with memory
+kinds carrying their access width. That is a static proxy for issue
+pressure (a warp scheduler issues one instruction per cycle) and the
+cheapest coalescing signal there is (128 two-byte shared loads per
+tile is a finding). They are PTX counts, not SASS: ptxas removes most
+register moves, folds address arithmetic into addressing modes, and
+expands one `.rn` divide into many machine instructions.
 
 Flops are reported in three tables by the unit that runs them: `flops`
 (CUDA cores), `tensor flops` (`wmma.mma`, `mma.sync`) and `sfu flops`
