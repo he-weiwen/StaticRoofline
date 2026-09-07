@@ -111,23 +111,13 @@ fn dump_kernel(m: &Module, k: &Kernel, out: &mut String) {
                     ),
                     None => String::new(),
                 };
-                let mods: String = m
-                    .modifiers(instr)
-                    .iter()
-                    .map(|&s| format!(".{}", m.interner.resolve(s)))
-                    .collect();
                 let ops: Vec<String> = m
                     .operand_ids(instr.operands)
                     .iter()
                     .map(|&id| dump_operand(m, id))
                     .collect();
                 let sep = if ops.is_empty() { "" } else { " " };
-                let _ = writeln!(
-                    out,
-                    "{pred}{}{mods}{sep}{};",
-                    m.interner.resolve(instr.mnemonic),
-                    ops.join(", ")
-                );
+                let _ = writeln!(out, "{pred}{}{sep}{};", m.opcode(instr), ops.join(", "));
             }
         }
     }

@@ -66,10 +66,10 @@ pub struct BlockMeasurements {
     pub qualifier: CountQualifier,
     pub measurements: Vec<Measurement>,
     pub class_counts: ClassCounts,
-    /// Instructions issued per execution of the block, by class. A
-    /// predicated instruction is issued whether or not its predicate
-    /// holds, so it counts here in full.
-    pub instructions: BTreeMap<OpClass, u32>,
+    /// Instructions issued per execution of the block, by class and
+    /// opcode. A predicated instruction is issued whether or not its
+    /// predicate holds, so it counts here in full.
+    pub instructions: BTreeMap<(OpClass, String), u32>,
 }
 
 /// Collect measurements for every block; indexed by `BlockId`.
@@ -90,7 +90,7 @@ pub fn collect(
             let qualifier = block_qualifier(forest, &exit_blocks, bid);
             let mut measurements = Vec::new();
             let mut counts = ClassCounts::default();
-            let mut instructions: BTreeMap<OpClass, u32> = BTreeMap::new();
+            let mut instructions: BTreeMap<(OpClass, String), u32> = BTreeMap::new();
             let b = cfg.block(bid);
             for (si, stmt) in kernel.stmts[b.start..b.end].iter().enumerate() {
                 let Stmt::Instr(instr) = stmt else {
@@ -113,7 +113,9 @@ pub fn collect(
                     None => push(MeasureKind::UnquantifiedBytes { space, direction }, 1),
                 };
                 let class = classify(module, instr);
-                *instructions.entry(class).or_default() += 1;
+                *instructions
+                    .entry((class, module.opcode(instr)))
+                    .or_default() += 1;
                 match class {
                     OpClass::Flop {
                         pipe,

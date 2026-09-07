@@ -484,7 +484,8 @@ impl<'a> KernelBuilder<'a> {
             Pipe::ALL.iter().map(|&p| (p, FlopTable::new())).collect();
         let mut bytes: BTreeMap<&'static str, (TermSum, TermSum)> = BTreeMap::new();
         let mut conversions = TermSum::default();
-        let mut instructions: BTreeMap<String, TermSum> = BTreeMap::new();
+        let mut instructions: BTreeMap<String, (TermSum, BTreeMap<String, TermSum>)> =
+            BTreeMap::new();
         let mut instruction_total = TermSum::default();
         for s in ["global", "shared", "local"] {
             bytes.insert(s, Default::default());
@@ -512,10 +513,12 @@ impl<'a> KernelBuilder<'a> {
                 || chain_at_most
                 || cta.is_some_and(|c| !c.exact);
             let threads = cta.map_or(1, |c| c.threads as i64);
-            for (&class, &n) in &bm.instructions {
+            for ((class, opcode), &n) in &bm.instructions {
                 let n = n as i64 * threads;
-                instructions
-                    .entry(instruction_kind(class))
+                let kind = instructions.entry(instruction_kind(*class)).or_default();
+                kind.0.add(n, &mult, block_at_most);
+                kind.1
+                    .entry(opcode.clone())
                     .or_default()
                     .add(n, &mult, block_at_most);
                 instruction_total.add(n, &mult, block_at_most);
@@ -602,7 +605,16 @@ impl<'a> KernelBuilder<'a> {
                 total: instruction_total.count(),
                 by_kind: instructions
                     .iter()
-                    .map(|(k, v)| (k.clone(), v.count()))
+                    .map(|(k, (total, opcodes))| {
+                        let counts = KindCounts {
+                            total: total.count(),
+                            opcodes: opcodes
+                                .iter()
+                                .map(|(o, v)| (o.clone(), v.count()))
+                                .collect(),
+                        };
+                        (k.clone(), counts)
+                    })
                     .collect(),
             },
         }

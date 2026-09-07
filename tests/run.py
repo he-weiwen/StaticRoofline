@@ -138,7 +138,8 @@ def _verify_unparsed_surfaced(report):
 
 def _verify_instruction_kinds_sum(report):
     """Wherever an aggregate carries numeric instruction counts, the
-    per-kind rows sum to the total."""
+    per-kind rows sum to the total and each kind's opcodes sum to the
+    kind."""
     out = []
 
     def check(agg, where):
@@ -147,11 +148,19 @@ def _verify_instruction_kinds_sum(report):
             return
         try:
             total = int(ins["total"]["expr"])
-            parts = sum(int(v["expr"]) for v in ins["by_kind"].values())
+            parts = sum(int(v["total"]["expr"]) for v in ins["by_kind"].values())
+            opcodes = {
+                k: (int(v["total"]["expr"]),
+                    sum(int(c["expr"]) for c in v["opcodes"].values()))
+                for k, v in ins["by_kind"].items()
+            }
         except (KeyError, ValueError):
             return
         if total != parts:
             out.append(f"{where}: instruction kinds sum to {parts}, total is {total}")
+        for kind, (kind_total, by_opcode) in opcodes.items():
+            if kind_total != by_opcode:
+                out.append(f"{where}: {kind} opcodes sum to {by_opcode}, kind is {kind_total}")
 
     def walk(nodes, prefix):
         for n in nodes:
@@ -724,9 +733,16 @@ def self_test():
        "AI-ratio violation named")
     bad = copy.deepcopy(good)
     bad["kernels"][0]["totals"] = {"instructions": {
-        "total": {"expr": "5"}, "by_kind": {"control": {"expr": "1"}}}}
+        "total": {"expr": "5"},
+        "by_kind": {"control": {"total": {"expr": "1"}, "opcodes": {"bra": {"expr": "1"}}}}}}
     ok(any("instruction-kinds-sum" in v for v in verify_report(bad)),
        "instruction kinds not summing to the total is named")
+    bad = copy.deepcopy(good)
+    bad["kernels"][0]["totals"] = {"instructions": {
+        "total": {"expr": "1"},
+        "by_kind": {"control": {"total": {"expr": "1"}, "opcodes": {"bra": {"expr": "2"}}}}}}
+    ok(any("opcodes sum" in v for v in verify_report(bad)),
+       "opcodes not summing to their kind is named")
     bad = copy.deepcopy(good)
     bad["kernels"][0]["instruction_classes"]["unparsed"] = 1
     ok(any("unparsed-surfaced" in v for v in verify_report(bad)),

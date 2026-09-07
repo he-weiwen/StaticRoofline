@@ -262,7 +262,14 @@ pub struct InstructionCounts {
     /// select", "conversion", "register move", "control",
     /// "synchronization", "warp communication", "hint / no-op",
     /// "unknown".
-    pub by_kind: BTreeMap<String, Count>,
+    pub by_kind: BTreeMap<String, KindCounts>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct KindCounts {
+    pub total: Count,
+    /// By opcode as PTX spells it (`fma.rn.f32`); sums to `total`.
+    pub opcodes: BTreeMap<String, Count>,
 }
 
 /// A flop/byte ratio with the direction it is known in: `exact`,

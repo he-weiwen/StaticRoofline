@@ -366,9 +366,9 @@ fn render_instructions(w: &mut String, pad: &str, i: &InstructionCounts) {
         let (order, title) = instruction_group(kind);
         let entry = groups.entry(order).or_insert((title, Vec::new()));
         entry.1.push(if matches!(order, 1 | 3) {
-            count(n)
+            count(&n.total)
         } else {
-            format!("{kind} {}", count(n))
+            format!("{kind} {}", count(&n.total))
         });
     }
     for (title, rows) in groups.values() {

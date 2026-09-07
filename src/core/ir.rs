@@ -158,6 +158,16 @@ impl Module {
         &self.modifier_pool[instr.modifiers.range()]
     }
 
+    /// The instruction as PTX spells it: mnemonic plus modifiers,
+    /// e.g. `ld.shared.v4.b32`.
+    pub fn opcode(&self, instr: &Instr) -> String {
+        std::iter::once(instr.mnemonic)
+            .chain(self.modifiers(instr).iter().copied())
+            .map(|s| self.interner.resolve(s))
+            .collect::<Vec<_>>()
+            .join(".")
+    }
+
     /// Resolve a `.file` index to its path, if declared.
     pub fn file_path(&self, index: u32) -> Option<&str> {
         self.files
